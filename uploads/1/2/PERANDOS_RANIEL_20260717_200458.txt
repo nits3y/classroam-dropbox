@@ -1,0 +1,23 @@
+System.out.println("Enter your name");
+        String name1=sc.nextLine();
+        System.out.println("Enter your type");
+        String type1=sc.nextLine();
+        System.out.println("Enter your age");
+        int age1=sc.nextInt();
+        sc.nextLine();
+
+        System.out.println("Enter your name");
+        String name2=sc.nextLine();
+        System.out.println("Enter your type");
+        String type2=sc.nextLine();
+        System.out.println("Enter your age");
+        int age2=sc.nextInt();
+        sc.nextLine();
+
+        System.out.println("Enter your name");
+        String name3=sc.nextLine();
+        System.out.println("Enter your type");
+        String type3=sc.nextLine();
+        System.out.println("Enter your age");
+        int age3=sc.nextInt();
+        sc.nextLine();
