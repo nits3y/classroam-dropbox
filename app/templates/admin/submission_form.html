@@ -1,0 +1,58 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Create submission — Classroom Dropbox{% endblock %}
+
+{% block admin_content %}
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">New assignment</p>
+        <h1>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: #0f6e56;">
+                <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Create submission
+        </h1>
+    </div>
+</section>
+
+<section class="panel narrow">
+    {% if classes %}
+    <form method="post" class="stacked-form">
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" placeholder="e.g. Week 4 Homework" required>
+
+        <label for="class_id">Class</label>
+        <select id="class_id" name="class_id" required>
+            {% for class in classes %}
+            <option value="{{ class.id }}">{{ class.name }}</option>
+            {% endfor %}
+        </select>
+
+        <label for="description">Description <span class="subtle" style="font-size: 0.75rem;">(optional)</span></label>
+        <textarea id="description" name="description" rows="4" placeholder="Instructions for students…"></textarea>
+
+        <fieldset>
+            <legend>Allowed file types</legend>
+            <label class="check"><input type="checkbox" name="file_types" value="any" checked> Any file type</label>
+            {% for ext in common_file_types %}
+            <label class="check"><input type="checkbox" name="file_types" value="{{ ext }}"> {{ ext }}</label>
+            {% endfor %}
+        </fieldset>
+
+        <label for="deadline">Deadline</label>
+        <input type="datetime-local" id="deadline" name="deadline" required>
+
+        <button type="submit">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Create submission
+        </button>
+    </form>
+    {% else %}
+    <div class="empty-state" style="text-align: left; padding: 0;">
+        <p style="margin-bottom: 1rem;">Create a class before adding submissions.</p>
+        <a class="button" href="{{ url_for('admin.classes') }}">Go to classes</a>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

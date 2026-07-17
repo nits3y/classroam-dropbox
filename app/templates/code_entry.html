@@ -3,11 +3,16 @@
 
 {% block content %}
 <div class="card">
-    <div class="app-label">Classroom Dropbox</div>
-    <form id="code-form">
-        <label for="code">Enter code</label>
-        <input type="text" id="code" name="code" placeholder="e.g. LAB3X" autocomplete="off" autofocus>
-        <div id="error-msg" class="error-text" style="display: none;"></div>
+    <div class="app-label">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0f6e56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.5rem;">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+        Classroom Dropbox
+    </div>
+    <form id="code-form" method="post" action="{{ url_for('main.join_submission') }}">
+        <label for="code">Enter your submission code</label>
+        <input type="text" id="code" name="code" placeholder="e.g. A1B2C3" autocomplete="off" autofocus maxlength="10" style="text-transform: uppercase; letter-spacing: 0.15em;">
+        <div id="error-msg" class="error-text" {% if not error %}style="display: none;"{% endif %}>{{ error or "" }}</div>
         <button type="submit" id="continue-btn" disabled>Continue</button>
     </form>
     <script src="{{ url_for('static', filename='js/code_entry.js') }}"></script>
