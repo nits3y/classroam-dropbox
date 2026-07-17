@@ -1,0 +1,78 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Submissions — Classroom Dropbox{% endblock %}
+
+{% block admin_content %}
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">Assignments</p>
+        <h1>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: #0f6e56;">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+            Submissions
+        </h1>
+    </div>
+    <a class="button" href="{{ url_for('admin.new_submission') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Create submission
+    </a>
+</section>
+
+<section class="panel">
+    {% if rows %}
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Class</th>
+                    <th>Deadline</th>
+                    <th>Status</th>
+                    <th>Submitted</th>
+                    <th>Code</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                {% set status = status_for_deadline(row.deadline) %}
+                <tr>
+                    <td><a href="{{ url_for('admin.submission_detail', submission_id=row.id) }}" style="font-weight: 600;">{{ row.title }}</a></td>
+                    <td>{{ row.class_name }}</td>
+                    <td class="subtle">{{ row.deadline }}</td>
+                    <td><span class="badge {{ status }}">{{ status.replace("-", " ") }}</span></td>
+                    <td>
+                        <span style="font-weight: 600;">{{ row.student_count }}</span>
+                        <span class="subtle" style="font-size: 0.78rem;">{{ 'file' if row.student_count == 1 else 'files' }}</span>
+                    </td>
+                    <td>
+                        <span class="code-pill">{{ row.code }}</span>
+                        <button type="button" class="copy-btn" data-copy="{{ row.code }}">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                            Copy
+                        </button>
+                    </td>
+                    <td><a class="danger-link" href="{{ url_for('admin.delete_submission', submission_id=row.id) }}">Delete</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p style="margin-bottom: 0.75rem;">No submissions yet.</p>
+        <a class="button small" href="{{ url_for('admin.new_submission') }}">Create your first submission</a>
+    </div>
+    {% endif %}
+</section>
+<script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+{% endblock %}

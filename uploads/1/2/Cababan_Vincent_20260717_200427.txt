@@ -1,0 +1,1 @@
+<!-- HTML Button --><button id="my-btn">Click Me!</button><!-- PyScript Logic --><py-script>from pyscript import Elementdef on_click(event):Element("output").write("Hello!")# Bind event to elementElement("my-btn").element.onclick = on_click</py-script>
