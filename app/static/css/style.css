@@ -1,0 +1,80 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f4;
+    color: #1a1a1a;
+}
+
+.page-center {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.card {
+    background: #ffffff;
+    border: 1px solid #e5e5e4;
+    border-radius: 12px;
+    padding: 2.5rem;
+    width: 100%;
+    max-width: 380px;
+}
+
+.app-label {
+    font-size: 0.8rem;
+    color: #8a8a86;
+    text-align: center;
+    margin-bottom: 1.5rem;
+    letter-spacing: 0.03em;
+}
+
+label {
+    display: block;
+    font-size: 0.85rem;
+    color: #4a4a47;
+    margin-bottom: 0.4rem;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 0.75rem;
+    font-size: 1rem;
+    border: 1px solid #d4d4d2;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+input[type="text"]:focus {
+    outline: none;
+    border-color: #0f6e56;
+}
+
+button {
+    width: 100%;
+    padding: 0.75rem;
+    font-size: 1rem;
+    background: #0f6e56;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+button:disabled {
+    background: #cfcfcd;
+    cursor: not-allowed;
+}
+
+.error-text {
+    color: #a32d2d;
+    font-size: 0.85rem;
+    margin-top: -0.5rem;
+    margin-bottom: 1rem;
+}

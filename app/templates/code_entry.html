@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Enter code — Classroom Dropbox{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="app-label">Classroom Dropbox</div>
+    <form id="code-form">
+        <label for="code">Enter code</label>
+        <input type="text" id="code" name="code" placeholder="e.g. LAB3X" autocomplete="off" autofocus>
+        <div id="error-msg" class="error-text" style="display: none;"></div>
+        <button type="submit" id="continue-btn" disabled>Continue</button>
+    </form>
+    <script src="{{ url_for('static', filename='js/code_entry.js') }}"></script>
+</div>
+{% endblock %}
