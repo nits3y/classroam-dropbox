@@ -1,19 +1,12 @@
 {% extends "admin/base_admin.html" %}
 {% block title %}Submissions — Classroom Dropbox{% endblock %}
+{% block page_title %}Submissions{% endblock %}
 
 {% block admin_content %}
 <section class="page-heading">
     <div>
         <p class="eyebrow">Assignments</p>
-        <h1>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: #0f6e56;">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-            </svg>
-            Submissions
-        </h1>
+        <h1>Submissions</h1>
     </div>
     <a class="button" href="{{ url_for('admin.new_submission') }}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
@@ -36,14 +29,13 @@
                     <th>Status</th>
                     <th>Submitted</th>
                     <th>Code</th>
-                    <th></th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in rows %}
                 {% set status = status_for_deadline(row.deadline) %}
-                <tr>
-                    <td><a href="{{ url_for('admin.submission_detail', submission_id=row.id) }}" style="font-weight: 600;">{{ row.title }}</a></td>
+                <tr class="clickable-row" data-href="{{ url_for('admin.submission_detail', submission_id=row.id) }}">
+                    <td><a href="{{ url_for('admin.submission_detail', submission_id=row.id) }}" class="row-title-link" tabindex="-1">{{ row.title }}</a></td>
                     <td>{{ row.class_name }}</td>
                     <td class="subtle">{{ row.deadline }}</td>
                     <td><span class="badge {{ status }}">{{ status.replace("-", " ") }}</span></td>
@@ -61,7 +53,6 @@
                             Copy
                         </button>
                     </td>
-                    <td><a class="danger-link" href="{{ url_for('admin.delete_submission', submission_id=row.id) }}">Delete</a></td>
                 </tr>
                 {% endfor %}
             </tbody>

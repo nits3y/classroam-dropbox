@@ -1,5 +1,6 @@
 {% extends "admin/base_admin.html" %}
 {% block title %}{{ submission.title }} — Classroom Dropbox{% endblock %}
+{% block page_title %}{{ submission.title }}{% endblock %}
 
 {% block admin_content %}
 <section class="page-heading">
@@ -55,13 +56,13 @@
                 </svg>
                 Export CSV
             </a>
-            <a class="button small danger-link" href="{{ url_for('admin.delete_submission', submission_id=submission.id) }}">
+            <button type="button" class="button small danger-link" onclick="document.getElementById('deleteModal').classList.add('modal-open')">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
                     <polyline points="3 6 5 6 21 6"/>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                 </svg>
                 Delete
-            </a>
+            </button>
         </div>
     </div>
     <div class="table-wrap">
@@ -100,6 +101,41 @@
         </table>
     </div>
 </section>
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" id="deleteModal" onclick="if(event.target===this)closeDeleteModal()">
+    <div class="modal-box">
+        <div class="modal-icon-wrap">
+            <svg class="modal-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+        </div>
+        <h1 class="modal-title">Delete "{{ submission.title }}"?</h1>
+        <p class="modal-desc">This deletes the submission, all student records, and uploaded files permanently.</p>
+        <form method="post" action="{{ url_for('admin.delete_submission', submission_id=submission.id) }}">
+            <button type="submit" class="modal-btn-danger">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Delete submission
+            </button>
+        </form>
+        <button type="button" class="modal-btn-cancel" onclick="closeDeleteModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Cancel
+        </button>
+    </div>
+</div>
+
+<script>
+function openDeleteModal() { document.getElementById('deleteModal').classList.add('modal-open'); }
+function closeDeleteModal() { document.getElementById('deleteModal').classList.remove('modal-open'); }
+</script>
+
 <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
 <script src="{{ url_for('static', filename='js/submission_live.js') }}"></script>
 <script src="{{ url_for('static', filename='js/admin.js') }}"></script>

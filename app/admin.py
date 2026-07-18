@@ -462,7 +462,8 @@ def delete_submission(submission_id):
         db.commit()
         flash("Submission and uploaded files deleted.", "success")
         return redirect(url_for("admin.submissions"))
-    return render_template("admin/delete_submission.html", submission=submission)
+    # If someone navigates directly to the GET URL, redirect to submission detail
+    return redirect(url_for("admin.submission_detail", submission_id=submission_id))
 
 
 def save_uploaded_file(upload, class_id, submission_id, last_name, first_name):
