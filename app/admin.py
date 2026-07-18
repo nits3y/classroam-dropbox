@@ -15,6 +15,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -386,6 +387,89 @@ def submission_detail(submission_id):
         is_late=is_late,
         student_file_name=student_file_name,
     )
+
+
+@admin.route("/submissions/<int:submission_id>/api")
+@teacher_required
+def submission_detail_api(submission_id):
+    db = get_db()
+    submission = get_submission_or_404(submission_id)
+    students = db.execute(
+        """
+        SELECT *
+        FROM student_submissions
+        WHERE submission_id = ?
+        ORDER BY submitted_at DESC, last_name, first_name
+        """,
+        (submission_id,),
+    ).fetchall()
+    
+    students_data = []
+    for student in students:
+        students_data.append({
+            "id": student["id"],
+            "last_name": student["last_name"],
+            "first_name": student["first_name"],
+            "filename": student_file_name(student),
+            "submitted_at": student["submitted_at"],
+            "is_late": is_late(student, submission),
+            "download_url": url_for("admin.download_student_file", student_id=student["id"]),
+        })
+    
+    return jsonify({
+        "id": submission["id"],
+        "title": submission["title"],
+        "class_name": submission["class_name"],
+        "description": submission["description"],
+        "deadline": submission["deadline"],
+        "code": submission["code"],
+        "status": status_for_deadline(submission["deadline"]),
+        "students": students_data,
+        "student_count": len(students_data),
+        "download_all_url": url_for("admin.download_all", submission_id=submission_id),
+        "export_csv_url": url_for("admin.export_submission", submission_id=submission_id),
+    })
+
+
+@admin.route("/submissions/<int:submission_id>/update", methods=["POST"])
+@teacher_required
+def update_submission(submission_id):
+    submission = get_submission_or_404(submission_id)
+    db = get_db()
+    
+    title = request.form.get("title", "").strip()
+    deadline_text = request.form.get("deadline", "")
+    description = request.form.get("description", "").strip()
+    
+    # Parse the deadline
+    deadline = parse_deadline(deadline_text)
+    
+    if not title or not deadline:
+        return jsonify({"error": "Title and deadline are required."}), 400
+    
+    try:
+        db.execute(
+            """
+            UPDATE submissions
+            SET title = ?, deadline = ?, description = ?
+            WHERE id = ?
+            """,
+            (title, deadline.isoformat(timespec="minutes"), description, submission_id),
+        )
+        db.commit()
+        return jsonify({
+            "success": True,
+            "message": "Submission updated successfully.",
+            "submission": {
+                "id": submission_id,
+                "title": title,
+                "deadline": deadline.isoformat(timespec="minutes"),
+                "description": description,
+                "status": status_for_deadline(deadline.isoformat(timespec="minutes")),
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @admin.route("/student-submissions/<int:student_id>/download")

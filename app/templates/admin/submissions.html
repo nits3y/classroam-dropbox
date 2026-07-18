@@ -34,8 +34,8 @@
             <tbody>
                 {% for row in rows %}
                 {% set status = status_for_deadline(row.deadline) %}
-                <tr class="clickable-row" data-href="{{ url_for('admin.submission_detail', submission_id=row.id) }}">
-                    <td><a href="{{ url_for('admin.submission_detail', submission_id=row.id) }}" class="row-title-link" tabindex="-1">{{ row.title }}</a></td>
+                <tr class="submission-row" data-submission-id="{{ row.id }}" style="cursor: pointer;">
+                    <td><span class="row-title">{{ row.title }}</span></td>
                     <td>{{ row.class_name }}</td>
                     <td class="subtle">{{ row.deadline }}</td>
                     <td><span class="badge {{ status }}">{{ status.replace("-", " ") }}</span></td>
@@ -45,7 +45,7 @@
                     </td>
                     <td>
                         <span class="code-pill">{{ row.code }}</span>
-                        <button type="button" class="copy-btn" data-copy="{{ row.code }}">
+                        <button type="button" class="copy-btn" data-copy="{{ row.code }}" onclick="event.stopPropagation();">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -65,5 +65,166 @@
     </div>
     {% endif %}
 </section>
+
+<!-- Primary Modal: Student Submissions List -->
+<div class="modal-overlay" id="submissionModal" onclick="if(event.target.id === 'submissionModal') closeSubmissionModal()">
+    <div class="modal-content">
+        <!-- Close button -->
+        <button type="button" class="modal-close-btn" onclick="closeSubmissionModal()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
+
+        <!-- Modal Header -->
+        <div class="modal-header">
+            <div>
+                <p class="modal-eyebrow" id="modalClassname">Class Name</p>
+                <h2 id="modalTitle">Assignment Title</h2>
+                <p class="modal-meta">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    Deadline: <span id="modalDeadline">--</span>
+                    &middot;
+                    Code: <span class="code-pill" id="modalCode">--</span>
+                    <button type="button" class="copy-btn" id="modalCopyBtn" onclick="event.stopPropagation();">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 3px;">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                        Copy
+                    </button>
+                </p>
+                <p class="modal-description" id="modalDescription" style="margin-top: 0.5rem; color: #64748b; display: none;"></p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <span class="badge" id="modalStatus">ongoing</span>
+                <button type="button" class="button-link" id="editDetailsBtn" onclick="openEditModal()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                        <polyline points="12 3 20 9 12 15 4 9 12 3"/>
+                    </svg>
+                    Edit Details
+                </button>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="modal-actions">
+            <a class="button small" id="downloadAllBtn" href="#">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download all
+            </a>
+            <a class="button small secondary-link" id="exportCsvBtn" href="#">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export CSV
+            </a>
+            <button type="button" class="button small danger-link" id="deleteSubmissionBtn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Delete
+            </button>
+        </div>
+
+        <!-- Student Submissions Table -->
+        <div class="modal-table-wrap">
+            <table class="modal-table">
+                <thead>
+                    <tr>
+                        <th>Last name</th>
+                        <th>First name</th>
+                        <th>File</th>
+                        <th>Submitted</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="modalStudentRows">
+                    <tr class="empty-row"><td colspan="5" class="empty-state" style="padding: 2rem;">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Secondary Modal: Edit Assignment Details -->
+<div class="modal-overlay" id="editModal" onclick="if(event.target.id === 'editModal') closeEditModal()">
+    <div class="modal-content modal-edit">
+        <!-- Close button -->
+        <button type="button" class="modal-close-btn" onclick="closeEditModal()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
+
+        <h2 style="margin-bottom: 1.5rem;">Edit Assignment Details</h2>
+
+        <form id="editSubmissionForm" onsubmit="handleEditSubmissionSubmit(event)">
+            <div class="form-group">
+                <label for="editTitle">Assignment Title</label>
+                <input type="text" id="editTitle" name="title" required>
+            </div>
+
+            <div class="form-group">
+                <label for="editDeadline">Deadline Date & Time</label>
+                <input type="datetime-local" id="editDeadline" name="deadline" required>
+            </div>
+
+            <div class="form-group">
+                <label for="editDescription">Description</label>
+                <textarea id="editDescription" name="description" rows="4" placeholder="Enter assignment description..."></textarea>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="button primary-action">Update Details</button>
+                <button type="button" class="button secondary-action" onclick="closeEditModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" id="deleteConfirmModal" onclick="if(event.target.id === 'deleteConfirmModal') closeDeleteConfirm()">
+    <div class="modal-box">
+        <div class="modal-icon-wrap">
+            <svg class="modal-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+        </div>
+        <h1 class="modal-title" id="deleteConfirmTitle">Delete submission?</h1>
+        <p class="modal-desc">This deletes the submission, all student records, and uploaded files permanently.</p>
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+            <button type="button" class="modal-btn-danger" id="confirmDeleteBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                Delete
+            </button>
+            <button type="button" class="modal-btn-cancel" onclick="closeDeleteConfirm()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
+<script src="{{ url_for('static', filename='js/submission-modal.js') }}"></script>
 {% endblock %}
