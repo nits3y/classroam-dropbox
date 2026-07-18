@@ -51,24 +51,27 @@ function populateSubmissionModal(data) {
     // Populate student rows
     const tbody = document.getElementById('modalStudentRows');
     if (data.students.length === 0) {
-        tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="empty-state" style="padding: 2rem;">No files submitted yet. Waiting for students…</td></tr>';
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="6" class="empty-state" style="padding: 2rem;">No files submitted yet. Waiting for students…</td></tr>';
     } else {
         tbody.innerHTML = data.students.map(student => `
             <tr>
-                <td><strong>${escapeHtml(student.last_name)}</strong></td>
-                <td>${escapeHtml(student.first_name)}</td>
-                <td>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px; color: #64748b;">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                        <polyline points="14 2 14 8 20 8"/>
+                <td class="col-last"><strong>${escapeHtml(student.last_name)}</strong></td>
+                <td class="col-first">${escapeHtml(student.first_name)}</td>
+                <td class="file-col">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px; color: #64748b;">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
                     </svg>
-                    ${escapeHtml(student.filename)}
+                    <span class="file-name" title="${escapeHtml(student.filename)}">${escapeHtml(student.filename)}</span>
                 </td>
-                <td>
-                    ${escapeHtml(student.submitted_at)}
+                <td class="col-submitted">
+                    ${escapeHtml(formatDeadline(student.submitted_at))}
                     ${student.is_late ? '<span class="late-tag">Late</span>' : ''}
                 </td>
-                <td><a href="${student.download_url}" class="button small secondary-link">Download</a></td>
+                <td class="actions-col">
+                    ${student.can_preview ? `<button class="btn-primary" onclick="openPreviewModal('${student.preview_url}', '${escapeHtml(student.filename)}', '${escapeHtml(student.last_name)}', '${escapeHtml(student.first_name)}', '${student.download_url}');">View</button>` : ''}
+                    <a href="${student.download_url}" class="btn-secondary-outline">Download</a>
+                </td>
             </tr>
         `).join('');
     }
@@ -251,13 +254,9 @@ function escapeHtml(unsafe) {
 function formatDeadline(isoString) {
     try {
         const date = new Date(isoString);
-        return date.toLocaleString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        const datePart = date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        const timePart = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        return `${datePart} · ${timePart}`;
     } catch {
         return isoString;
     }

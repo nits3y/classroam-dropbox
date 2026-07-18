@@ -41,6 +41,70 @@ STATUS_LABELS = {
     "closed": "Closed",
 }
 
+# File preview classification
+TEXT_EXTENSIONS = {
+    ".py", ".txt", ".java", ".js", ".html", ".css", ".json", ".md",
+    ".cmd", ".c", ".cpp", ".xml", ".yaml", ".yml", ".sh", ".bat",
+    ".rb", ".php", ".sql", ".r", ".scala", ".go", ".rs", ".ts", ".jsx",
+    ".tsx", ".vue", ".lua", ".swift", ".kt", ".gradle", ".properties",
+    ".ini", ".conf", ".config", ".log", ".csv", ".tsv", ".sql", ".pl"
+}
+DIRECT_RENDER_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif"}
+
+
+def get_file_classification(filename):
+    """Classify file as text/code, direct-render, or unsupported."""
+    ext = Path(filename).suffix.lower()
+    if ext in TEXT_EXTENSIONS:
+        return "text"
+    elif ext in DIRECT_RENDER_EXTENSIONS:
+        return "render"
+    else:
+        return "unsupported"
+
+
+def get_highlight_language(filename):
+    """Map file extension to highlight.js language identifier."""
+    ext = Path(filename).suffix.lower()
+    ext_to_lang = {
+        ".py": "python",
+        ".java": "java",
+        ".js": "javascript",
+        ".jsx": "javascript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".html": "html",
+        ".xml": "xml",
+        ".css": "css",
+        ".json": "json",
+        ".md": "markdown",
+        ".sql": "sql",
+        ".sh": "bash",
+        ".cmd": "batch",
+        ".bat": "batch",
+        ".c": "c",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".h": "cpp",
+        ".rb": "ruby",
+        ".php": "php",
+        ".r": "r",
+        ".scala": "scala",
+        ".go": "go",
+        ".rs": "rust",
+        ".vue": "html",
+        ".lua": "lua",
+        ".swift": "swift",
+        ".kt": "kotlin",
+        ".gradle": "gradle",
+        ".properties": "properties",
+        ".ini": "ini",
+        ".yaml": "yaml",
+        ".yml": "yaml",
+        ".pl": "perl",
+    }
+    return ext_to_lang.get(ext, "plaintext")
+
 
 def teacher_required(view):
     @wraps(view)
@@ -406,14 +470,18 @@ def submission_detail_api(submission_id):
     
     students_data = []
     for student in students:
+        filename = student_file_name(student)
+        file_classification = get_file_classification(filename)
         students_data.append({
             "id": student["id"],
             "last_name": student["last_name"],
             "first_name": student["first_name"],
-            "filename": student_file_name(student),
+            "filename": filename,
             "submitted_at": student["submitted_at"],
             "is_late": is_late(student, submission),
             "download_url": url_for("admin.download_student_file", student_id=student["id"]),
+            "can_preview": file_classification != "unsupported",
+            "preview_url": url_for("admin.preview_student_file", submission_id=submission_id, student_id=student["id"]) if file_classification != "unsupported" else None,
         })
     
     return jsonify({
@@ -485,6 +553,69 @@ def download_student_file(student_id):
     if not path.exists():
         abort(404)
     return send_file(path, as_attachment=True, download_name=path.name)
+
+
+@admin.route("/submissions/<int:submission_id>/files/<int:student_id>/preview")
+@teacher_required
+def preview_student_file(submission_id, student_id):
+    """
+    Preview a student's submitted file.
+    Returns content for text/code files as JSON, or serves file directly for images/PDF.
+    """
+    # Verify submission exists and get it
+    submission = get_submission_or_404(submission_id)
+    
+    # Get student submission record and verify it belongs to this submission
+    student_row = get_db().execute(
+        "SELECT * FROM student_submissions WHERE id = ? AND submission_id = ?",
+        (student_id, submission_id),
+    ).fetchone()
+    if student_row is None:
+        abort(404)
+    
+    path = Path(student_row["file_path"])
+    if not path.exists():
+        abort(404)
+    
+    filename = path.name
+    classification = get_file_classification(filename)
+    
+    # Unsupported file types should not be previewable
+    if classification == "unsupported":
+        abort(415)  # Unsupported Media Type
+    
+    # Direct-render files (images, PDF) - serve with correct mimetype, not as attachment
+    if classification == "render":
+        mimetype_map = {
+            ".pdf": "application/pdf",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+            ".gif": "image/gif",
+        }
+        ext = path.suffix.lower()
+        mimetype = mimetype_map.get(ext, "application/octet-stream")
+        return send_file(path, mimetype=mimetype, as_attachment=False)
+    
+    # Text/code files - read content and return as JSON for frontend syntax highlighting
+    if classification == "text":
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+            
+            return jsonify({
+                "type": "text",
+                "filename": filename,
+                "last_name": student_row["last_name"],
+                "first_name": student_row["first_name"],
+                "content": content,
+                "language": get_highlight_language(filename),
+                "download_url": url_for("admin.download_student_file", student_id=student_id),
+            })
+        except (IOError, OSError):
+            abort(500)
+    
+    abort(415)
 
 
 @admin.route("/submissions/<int:submission_id>/download-all")
