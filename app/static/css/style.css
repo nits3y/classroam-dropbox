@@ -1564,9 +1564,15 @@ button.danger:disabled {
     margin: 0;
 }
 
+.preview-modal {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* keep modal card fixed; only inner code box scrolls */
+}
+
 .preview-content-area {
-    flex: 1;
-    overflow: auto;
+    flex: 1 1 auto;
+    overflow: hidden; /* prevent the outer area from scrolling */
     background: #f8fafc;
     padding: 1.5rem 2rem;
     display: flex;
@@ -1576,28 +1582,63 @@ button.danger:disabled {
 }
 
 .preview-code-wrapper {
+    position: relative; /* for toolbar positioning */
     width: 100%;
     max-width: 980px;
     background: #0f1724; /* deep navy */
     border-radius: 10px;
     padding: 20px;
     box-shadow: 0 6px 18px rgba(2,6,23,0.08);
-    overflow: auto;
-    max-height: 60vh;
+    overflow: hidden; /* outer wrapper hides overflow; inner code area scrolls */
+}
+
+.preview-code-toolbar {
+    position: absolute;
+    top: 10px;
+    /* shift left from the very edge so the scrollbar (when present) never sits under the button */
+    right: 16px;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 6;
+}
+
+.btn-copy {
+    /* semi-opaque backdrop so the button remains legible over code */
+    background: rgba(15,23,36,0.6);
+    color: #e6eef6;
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 0.85rem;
+    box-shadow: 0 6px 18px rgba(2,6,23,0.35);
+    backdrop-filter: blur(4px);
+}
+
+.btn-copy.copied {
+    background: #10b981; /* green */
+    color: white;
+    border-color: rgba(16,185,129,0.2);
+}
+
+.preview-code-scroll {
+    width: 100%;
+    max-height: 65vh; /* only this element scrolls vertically */
+    overflow-y: auto;
+    /* reserve extra right padding so the scrollbar never overlaps the copy button */
+    padding-right: 24px;
 }
 
 .preview-code-block {
     background: transparent;
     border-radius: 6px;
     padding: 0;
-    overflow: auto;
     width: 100%;
     margin: 0;
     font-size: 0.9rem;
     line-height: 1.6;
     color: #e6eef6;
-    max-height: 60vh;
-    overflow-y: auto;
 }
 
 .preview-code-block code {

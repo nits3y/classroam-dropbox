@@ -22,6 +22,14 @@ def create_app():
             "CLASSROOM_TEACHER_PASSWORD_HASH",
             generate_password_hash(os.environ.get("CLASSROOM_TEACHER_PASSWORD", "teacher")),
         ),
+        # Path to LibreOffice `soffice.exe` for converting Office files to PDF on Windows.
+        # Can be overridden via the CLASSROOM_LIBREOFFICE_PATH environment variable.
+        LIBREOFFICE_PATH=os.environ.get(
+            "CLASSROOM_LIBREOFFICE_PATH",
+            "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
+        ),
+        # Conversion timeout for LibreOffice in seconds
+        LIBREOFFICE_CONVERT_TIMEOUT=int(os.environ.get("CLASSROOM_LIBREOFFICE_CONVERT_TIMEOUT", "25")),
     )
 
     from app.admin import admin

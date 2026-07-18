@@ -5,6 +5,9 @@ import sqlite3
 import socket
 import string
 import zipfile
+import subprocess
+import shutil
+import logging
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
@@ -50,11 +53,18 @@ TEXT_EXTENSIONS = {
     ".ini", ".conf", ".config", ".log", ".csv", ".tsv", ".sql", ".pl"
 }
 DIRECT_RENDER_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".gif"}
+OFFICE_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
+
+# LibreOffice availability flag (set at app startup)
+LIBREOFFICE_AVAILABLE = False
+LIBREOFFICE_PATH = None
 
 
 def get_file_classification(filename):
     """Classify file as text/code, direct-render, or unsupported."""
     ext = Path(filename).suffix.lower()
+    if ext in OFFICE_EXTENSIONS:
+        return "office"
     if ext in TEXT_EXTENSIONS:
         return "text"
     elif ext in DIRECT_RENDER_EXTENSIONS:
@@ -222,6 +232,7 @@ def build_student_submission_payload(student_row, submission_row):
         "submitted_at": student_row["submitted_at"],
         "is_late": is_late(student_row, submission_row),
         "download_url": url_for("admin.download_student_file", student_id=student_row["id"]),
+        "file_class": get_file_classification(student_file_name(student_row)),
     }
 
 
@@ -481,6 +492,7 @@ def submission_detail_api(submission_id):
             "is_late": is_late(student, submission),
             "download_url": url_for("admin.download_student_file", student_id=student["id"]),
             "can_preview": file_classification != "unsupported",
+            "file_class": file_classification,
             "preview_url": url_for("admin.preview_student_file", submission_id=submission_id, student_id=student["id"]) if file_classification != "unsupported" else None,
         })
     
@@ -596,6 +608,19 @@ def preview_student_file(submission_id, student_id):
         ext = path.suffix.lower()
         mimetype = mimetype_map.get(ext, "application/octet-stream")
         return send_file(path, mimetype=mimetype, as_attachment=False)
+
+    # Office files (.docx, .pptx, .xlsx): convert to PDF via LibreOffice and serve PDF
+    if classification == "office":
+        # Attempt to convert or locate cached PDF beside the original file
+        pdf_path = try_convert_office_to_pdf(path)
+        if pdf_path:
+            return send_file(pdf_path, mimetype="application/pdf", as_attachment=False)
+        # Conversion not available or failed - return JSON with friendly message (frontend will render)
+        return jsonify({
+            "type": "error",
+            "message": "Preview isn't available for this file (LibreOffice not found or conversion failed).",
+            "download_url": url_for("admin.download_student_file", student_id=student_id),
+        })
     
     # Text/code files - read content and return as JSON for frontend syntax highlighting
     if classification == "text":
@@ -692,3 +717,81 @@ def save_uploaded_file(upload, class_id, submission_id, last_name, first_name):
     path = folder / filename
     upload.save(path)
     return str(path)
+
+
+def _init_libreoffice_config():
+    """Initialize LibreOffice path and availability flag once at app startup."""
+    global LIBREOFFICE_AVAILABLE, LIBREOFFICE_PATH
+    LIBREOFFICE_PATH = Path(current_app.config.get("LIBREOFFICE_PATH"))
+    # Check existence and executability
+    if not LIBREOFFICE_PATH.exists():
+        current_app.logger.warning(
+            "LibreOffice not found at %s. DOCX/PPTX/XLSX previews will be disabled.", LIBREOFFICE_PATH
+        )
+        LIBREOFFICE_AVAILABLE = False
+        return
+
+    try:
+        # Quick version check
+        res = subprocess.run([str(LIBREOFFICE_PATH), "--version"], capture_output=True, timeout=5)
+        if res.returncode == 0:
+            LIBREOFFICE_AVAILABLE = True
+            current_app.logger.info("LibreOffice detected at %s; office preview enabled.", LIBREOFFICE_PATH)
+        else:
+            LIBREOFFICE_AVAILABLE = False
+            current_app.logger.warning("LibreOffice appears to be installed but version check failed.")
+    except Exception as e:
+        LIBREOFFICE_AVAILABLE = False
+        current_app.logger.warning("LibreOffice check failed: %s", str(e))
+
+
+@admin.before_app_first_request
+def _ensure_libreoffice_checked():
+    _init_libreoffice_config()
+
+
+def try_convert_office_to_pdf(src_path: Path):
+    """Convert an office document to PDF (cached). Returns Path to PDF or None on failure.
+
+    The PDF is cached next to the original with the same base name and .pdf suffix.
+    Conversion only runs when LibreOffice is available and the cached PDF is missing or older.
+    """
+    global LIBREOFFICE_AVAILABLE, LIBREOFFICE_PATH
+    src_path = Path(src_path)
+    pdf_path = src_path.with_suffix('.pdf')
+
+    try:
+        # If cached PDF exists and is newer, reuse it
+        if pdf_path.exists() and pdf_path.stat().st_mtime >= src_path.stat().st_mtime:
+            return pdf_path
+
+        if not LIBREOFFICE_AVAILABLE:
+            current_app.logger.info("LibreOffice not available; cannot convert %s", src_path)
+            return None
+
+        outdir = str(src_path.parent)
+        cmd = [str(LIBREOFFICE_PATH), "--headless", "--convert-to", "pdf", "--outdir", outdir, str(src_path)]
+        timeout = int(current_app.config.get("LIBREOFFICE_CONVERT_TIMEOUT", 25))
+        current_app.logger.info("Converting %s to PDF using LibreOffice", src_path)
+        res = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        if res.returncode != 0:
+            current_app.logger.warning(
+                "LibreOffice conversion failed for %s: returncode=%s stdout=%s stderr=%s",
+                src_path, res.returncode, res.stdout[:200], res.stderr[:200]
+            )
+            return None
+
+        # Verify output PDF now exists
+        if pdf_path.exists():
+            return pdf_path
+        # Sometimes LibreOffice prefixes with original extension - try to find any pdf in outdir with similar name
+        for candidate in src_path.parent.glob(f"{src_path.stem}*.pdf"):
+            return candidate
+        current_app.logger.warning("Converted PDF not found after conversion for %s", src_path)
+        return None
+    except subprocess.TimeoutExpired:
+        current_app.logger.warning("LibreOffice conversion timed out for %s", src_path)
+        return None
+    except Exception as e:
+        current_app.logger.exception("Unexpected error during LibreOffice conversion: %s", e)
+        return None

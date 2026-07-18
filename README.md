@@ -1,3 +1,28 @@
+# Classroom Dropbox — LibreOffice Offline Preview Setup
+
+This project can convert Microsoft Office files (.docx, .pptx, .xlsx) to PDF for in-browser preview using LibreOffice in headless mode. This conversion happens entirely on the teacher's Windows laptop and works offline once LibreOffice is installed.
+
+Installation notes (PREREQUISITE — do this manually):
+
+- Download and install LibreOffice from https://libreoffice.org (free).
+- Typical Windows install path for `soffice.exe` is:
+
+  `C:\Program Files\LibreOffice\program\soffice.exe`
+
+- Configure the app to point to `soffice.exe` if your LibreOffice is installed to a non-default location. You can set the environment variable `CLASSROOM_LIBREOFFICE_PATH` before starting the app, or edit the configuration in `create_app()` if you maintain a custom deployment.
+
+Behavior and fallback:
+
+- On first "View" of a `.docx`, `.pptx`, or `.xlsx` file, the app will invoke LibreOffice headlessly to convert the document to PDF and cache the resulting PDF next to the original file. Subsequent previews use the cached PDF.
+- If LibreOffice is not installed, the configured path is wrong, or conversion fails (including timeout), the app will NOT crash. Instead, the preview modal shows a friendly message: "Preview isn't available for this file (LibreOffice not found or conversion failed) — download to view instead." The Download button remains available so you can open the file locally.
+- LibreOffice availability is checked once at app startup; a console message will indicate whether office preview support is enabled.
+
+Notes for teachers:
+
+- Make sure to run the app after installing LibreOffice so the availability check runs at startup.
+- If you prefer to place converted PDFs in a different location, adapt the conversion helper in `app/admin.py` to change the cache location.
+
+This file complements the project's README and documents the manual step required to enable Office-to-PDF previews.
 # Classroom Dropbox
 
 Teacher-facing Flask app for collecting classroom file submissions on a local school LAN.

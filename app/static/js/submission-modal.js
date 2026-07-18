@@ -69,7 +69,7 @@ function populateSubmissionModal(data) {
                     ${student.is_late ? '<span class="late-tag">Late</span>' : ''}
                 </td>
                 <td class="actions-col">
-                    ${student.can_preview ? `<button class="btn-primary" onclick="openPreviewModal('${student.preview_url}', '${escapeHtml(student.filename)}', '${escapeHtml(student.last_name)}', '${escapeHtml(student.first_name)}', '${student.download_url}');">View</button>` : ''}
+                    ${student.can_preview ? `<button class="btn-primary" onclick="openPreviewModal('${student.preview_url}', '${escapeHtml(student.filename)}', '${escapeHtml(student.last_name)}', '${escapeHtml(student.first_name)}', '${student.download_url}', '${student.file_class}');">View</button>` : ''}
                     <a href="${student.download_url}" class="btn-secondary-outline">Download</a>
                 </td>
             </tr>

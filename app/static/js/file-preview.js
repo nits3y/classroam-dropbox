@@ -1,6 +1,6 @@
 // ── File Preview Modal Manager ────────────────────────────────────
 
-function openPreviewModal(previewUrl, filename, lastName, firstName, downloadUrl) {
+function openPreviewModal(previewUrl, filename, lastName, firstName, downloadUrl, fileClass) {
     const modal = document.getElementById('previewModal');
     const contentArea = document.getElementById('previewContentArea');
     
@@ -9,11 +9,12 @@ function openPreviewModal(previewUrl, filename, lastName, firstName, downloadUrl
     document.getElementById('previewStudent').textContent = `${lastName}, ${firstName}`;
     document.getElementById('previewDownloadBtn').href = downloadUrl;
     
-    // Show loading state
+    // Show loading state (distinct for office conversions)
+    const loadingText = fileClass === 'office' ? 'Converting document...' : 'Loading preview...';
     contentArea.innerHTML = `
         <div class="preview-loading">
             <div class="spinner"></div>
-            <p>Loading preview...</p>
+            <p>${loadingText}</p>
         </div>
     `;
     modal.classList.add('modal-open');
@@ -45,7 +46,11 @@ async function fetchPreviewContent(previewUrl, contentArea) {
         if (contentType && contentType.includes('application/json')) {
             // Text/code file - JSON response with content
             const data = await response.json();
-            renderTextPreview(data, contentArea);
+            if (data && data.type === 'error') {
+                showPreviewError(contentArea, data.message || 'Preview unavailable.');
+            } else {
+                renderTextPreview(data, contentArea);
+            }
         } else if (contentType && (contentType.includes('image/') || contentType.includes('application/pdf'))) {
             // Image or PDF - render directly
             const blob = await response.blob();
@@ -61,10 +66,23 @@ async function fetchPreviewContent(previewUrl, contentArea) {
 
 function renderTextPreview(data, contentArea) {
     const { content, language } = data;
-    
-    // Create a padded wrapper and code block with syntax highlighting
+    // Create the outer wrapper (non-scrolling) and an inner scrollable area
     const wrapper = document.createElement('div');
     wrapper.className = 'preview-code-wrapper';
+
+    // Toolbar area (copy button)
+    const toolbar = document.createElement('div');
+    toolbar.className = 'preview-code-toolbar';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn-copy';
+    copyBtn.type = 'button';
+    copyBtn.textContent = 'Copy Code';
+    toolbar.appendChild(copyBtn);
+    wrapper.appendChild(toolbar);
+
+    // Scrollable code container
+    const scrollArea = document.createElement('div');
+    scrollArea.className = 'preview-code-scroll';
 
     const codeBlock = document.createElement('pre');
     codeBlock.className = 'preview-code-block';
@@ -73,9 +91,8 @@ function renderTextPreview(data, contentArea) {
     codeElement.textContent = content;
     codeElement.className = `language-${language}`;
     codeBlock.appendChild(codeElement);
-
-    // allow vertical scrolling within the wrapper for long files
-    wrapper.appendChild(codeBlock);
+    scrollArea.appendChild(codeBlock);
+    wrapper.appendChild(scrollArea);
 
     contentArea.innerHTML = '';
     contentArea.appendChild(wrapper);
@@ -88,6 +105,30 @@ function renderTextPreview(data, contentArea) {
             console.warn('Highlight failed', e);
         }
     }
+
+    // Copy button behavior: copy raw code text and show feedback
+    copyBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(codeElement.textContent || '');
+            // visual feedback
+            copyBtn.classList.add('copied');
+            const original = copyBtn.textContent;
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => {
+                copyBtn.classList.remove('copied');
+                copyBtn.textContent = original;
+            }, 2000);
+        } catch (err) {
+            console.error('Copy failed', err);
+            // fallback: select text
+            const range = document.createRange();
+            range.selectNodeContents(codeElement);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+    });
 }
 
 function renderDirectPreview(blob, contentType, contentArea) {
