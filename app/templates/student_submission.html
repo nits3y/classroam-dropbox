@@ -50,25 +50,69 @@
         This submission is closed. Ask your teacher if you need help.
     </div>
     {% else %}
-    <form method="post" enctype="multipart/form-data" class="stacked-form">
+    <form id="studentSubmissionForm" method="post" enctype="multipart/form-data" class="stacked-form">
         <label for="last_name">Last name</label>
         <input type="text" id="last_name" name="last_name" autocomplete="family-name" required autofocus>
 
         <label for="first_name">First name</label>
         <input type="text" id="first_name" name="first_name" autocomplete="given-name" required>
 
-        <label for="file">Choose file</label>
-        <input type="file" id="file" name="file" {% if accept %}accept="{{ accept }}"{% endif %} required>
+        {% set allows_paste = (allowed is none) or ('paste' in (allowed if allowed else [])) %}
 
-        <button type="submit">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/>
-                <line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Upload file
-        </button>
+        <div class="form-section">
+            <div class="section-heading">
+                <label>Upload files</label>
+                <p class="subtle" style="margin: 0.35rem 0 0;">Add one file per field. You can upload multiple files in one submission.</p>
+            </div>
+            <div id="fileInputsContainer">
+                <div class="file-input-row">
+                    <input type="file" name="files" id="file-1" {% if accept %}accept="{{ accept }}"{% endif %} required>
+                </div>
+            </div>
+            <button type="button" class="button secondary small" id="addFileBtn">+ Add Another File</button>
+        </div>
+
+        {% if allows_paste %}
+        <div class="form-section" id="snippetSection">
+            <div class="section-heading">
+                <label>Plain text code snippets</label>
+                <p class="subtle" style="margin: 0.35rem 0 0;">Paste multiple snippets. Empty fields are not allowed.</p>
+            </div>
+            <div id="snippetContainer">
+                <div class="snippet-block">
+                    <textarea name="snippets" rows="8" placeholder="Paste a code snippet..." required style="font-family: monospace; white-space: pre; overflow:auto;"></textarea>
+                    <button type="button" class="button secondary small remove-snippet-btn">Remove</button>
+                </div>
+            </div>
+            <button type="button" class="button secondary small" id="addSnippetBtn">+ Add Plain Text Code</button>
+            <div class="error-text" id="snippetError" style="display: none; margin-top: 0.75rem;"></div>
+        </div>
+        {% endif %}
+
+        <div class="form-actions" style="margin-top: 1rem; gap: 0.75rem;">
+            <button type="submit" id="submitAssignmentBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                Submit Assignment
+            </button>
+        </div>
     </form>
+
+    <div class="modal-overlay" id="submissionConfirmModal" onclick="if(event.target.id === 'submissionConfirmModal') closeSubmissionConfirmModal()">
+        <div class="modal-box" style="max-width: 480px; width: 100%;">
+            <h2 style="margin-bottom: 1rem;">Confirm submission</h2>
+            <p id="submissionConfirmText" style="margin-bottom: 1.5rem; color: #475569;">Are you sure you want to submit? You are submitting 0 file(s) and 0 text snippet(s).</p>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; flex-wrap: wrap;">
+                <button type="button" class="button secondary" id="cancelSubmitBtn">Go back</button>
+                <button type="button" class="button" id="confirmSubmitBtn">Yes, submit</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/student_submission.js') }}"></script>
     {% endif %}
 </div>
 {% endblock %}

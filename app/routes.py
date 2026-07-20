@@ -3,7 +3,14 @@ from pathlib import Path
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
-from app.admin import emit_new_submission, now_local, parse_deadline, save_uploaded_file, status_for_deadline
+from app.admin import (
+    emit_new_submission,
+    now_local,
+    parse_deadline,
+    save_uploaded_file,
+    save_pasted_text,
+    status_for_deadline,
+)
 from app.db import get_db
 
 main = Blueprint("main", __name__)
@@ -76,36 +83,75 @@ def student_submission(code):
     if request.method == "POST":
         last_name = request.form.get("last_name", "").strip()
         first_name = request.form.get("first_name", "").strip()
-        upload = request.files.get("file")
+        uploads = [upload for upload in request.files.getlist("files") if upload and upload.filename]
+        raw_snippets = request.form.getlist("snippets")
+        snippets = [snippet.strip() for snippet in raw_snippets if snippet is not None]
+
+        allowed = allowed_extensions(submission["allowed_file_types"])
+        allows_paste = (allowed is None) or ("paste" in allowed)
 
         if status == "closed":
             flash("This submission is closed.", "error")
         elif not last_name or not first_name:
             flash("Enter both your first and last name.", "error")
+        elif allows_paste and raw_snippets and any(not snippet.strip() for snippet in raw_snippets):
+            flash("All plain text code fields must contain text.", "error")
+        elif not uploads and not snippets:
+            flash("Submit at least one file or text snippet.", "error")
         else:
-            upload_error = validate_student_upload(submission, upload)
-            if upload_error:
-                flash(upload_error, "error")
-            else:
-                saved_path = save_uploaded_file(
-                    upload,
-                    submission["class_id"],
-                    submission["id"],
-                    last_name,
-                    first_name,
-                )
+            saved_paths = []
+            if uploads:
+                for index, upload in enumerate(uploads, start=1):
+                    upload_error = validate_student_upload(submission, upload)
+                    if upload_error:
+                        flash(upload_error, "error")
+                        saved_paths = []
+                        break
+                    saved_paths.append(
+                        save_uploaded_file(
+                            upload,
+                            submission["class_id"],
+                            submission["id"],
+                            last_name,
+                            first_name,
+                            index=index,
+                        )
+                    )
+
+            if allows_paste and snippets:
+                for index, snippet in enumerate(snippets, start=1):
+                    saved_text_path = save_pasted_text(
+                        snippet,
+                        submission["class_id"],
+                        submission["id"],
+                        last_name,
+                        first_name,
+                        suffix=f"_snippet{index}.txt",
+                    )
+                    if not saved_text_path:
+                        flash("Failed to save pasted content.", "error")
+                        saved_paths = []
+                        break
+                    saved_paths.append(saved_text_path)
+
+            if saved_paths:
                 submitted_at = now_local().isoformat(timespec="seconds")
                 db = get_db()
-                cursor = db.execute(
+                rows = []
+                for saved_path in saved_paths:
+                    rows.append((submission["id"], last_name, first_name, saved_path, submitted_at))
+                cursor = db.executemany(
                     """
                     INSERT INTO student_submissions
                         (submission_id, last_name, first_name, file_path, submitted_at)
                     VALUES (?, ?, ?, ?, ?)
                     """,
-                    (submission["id"], last_name, first_name, saved_path, submitted_at),
+                    rows,
                 )
                 db.commit()
-                emit_new_submission(submission["id"], cursor.lastrowid)
+                # Emit only the last saved student submission for realtime updates
+                if saved_paths:
+                    emit_new_submission(submission["id"], db.execute("SELECT id FROM student_submissions WHERE submission_id = ? ORDER BY id DESC LIMIT 1", (submission["id"],)).fetchone()["id"])
                 return redirect(url_for("main.submission_success", code=code))
 
     deadline = parse_deadline(submission["deadline"])
@@ -117,6 +163,7 @@ def student_submission(code):
         status=status,
         deadline=deadline,
         accept=accept,
+        allowed=allowed,
         allowed_label="Any file type" if allowed is None else ", ".join(sorted(allowed)),
     )
 

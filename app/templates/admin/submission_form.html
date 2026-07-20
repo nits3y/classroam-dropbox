@@ -26,13 +26,40 @@
         <label for="description">Description <span class="subtle" style="font-size: 0.75rem;">(optional)</span></label>
         <textarea id="description" name="description" rows="4" placeholder="Instructions for students…"></textarea>
 
-        <fieldset>
-            <legend>Allowed file types</legend>
-            <label class="check"><input type="checkbox" name="file_types" value="any" checked> Any file type</label>
-            {% for ext in common_file_types %}
-            <label class="check"><input type="checkbox" name="file_types" value="{{ ext }}"> {{ ext }}</label>
-            {% endfor %}
+        <fieldset id="allowed-filetypes">
+            <label class="check"><input type="checkbox" name="file_types" value="any" checked id="opt-any"> Any file type</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".py"> Python (.py)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".c"> C (.c)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".cpp"> C++ (.cpp)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".java"> Java (.java)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".cs"> C# (.cs)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".kt"> Kotlin (.kt)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".sql"> SQL (.sql)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".html"> HTML (.html)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".css"> CSS (.css)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".js"> JavaScript (.js)</label>
+            <label class="check"><input type="checkbox" name="file_types" value=".xlsx"> Excel (.xlsx/.xls)</label>
+            <label class="check"><input type="checkbox" name="file_types" value="paste" id="opt-paste"> Plain Text / Direct Paste (students can paste text instead of uploading)</label>
         </fieldset>
+
+        <script>
+        // Toggle logic: if Any is checked, uncheck specifics; if any specific checked, uncheck Any
+        (function(){
+            const optAny = document.getElementById('opt-any');
+            const optPaste = document.getElementById('opt-paste');
+            const container = document.getElementById('allowed-filetypes');
+            container.addEventListener('change', (e) => {
+                const target = e.target;
+                if (!target.matches('input[type=checkbox]')) return;
+                if (target === optAny && optAny.checked) {
+                    // uncheck all others
+                    container.querySelectorAll('input[type=checkbox]').forEach(cb => { if (cb !== optAny) cb.checked = false; });
+                } else if (target !== optAny && target.checked) {
+                    optAny.checked = false;
+                }
+            });
+        })();
+        </script>
 
         <label for="deadline">Deadline</label>
         <input type="datetime-local" id="deadline" name="deadline" required>

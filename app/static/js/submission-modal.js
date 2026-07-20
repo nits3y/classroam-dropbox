@@ -22,6 +22,198 @@ function closeSubmissionModal() {
     currentSubmissionId = null;
 }
 
+function openCreateSubmissionModal() {
+    document.getElementById('createSubmissionModal').classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    const form = document.getElementById('createSubmissionForm');
+    if (form) {
+        form.reset();
+    }
+    // Reset file type modal checkboxes
+    const fileTypeForm = document.getElementById('fileTypeForm');
+    if (fileTypeForm) {
+        Array.from(fileTypeForm.querySelectorAll('input[type="checkbox"]')).forEach(cb => cb.checked = false);
+        const any = fileTypeForm.querySelector('#filetype-opt-any');
+        if (any) any.checked = true;
+    }
+    const firstInput = document.getElementById('createTitle');
+    if (firstInput) {
+        firstInput.focus();
+    }
+    closeFileTypeDropdown();
+}
+
+function closeCreateSubmissionModal() {
+    document.getElementById('createSubmissionModal').classList.remove('modal-open');
+    document.body.classList.remove('modal-open');
+    const form = document.getElementById('createSubmissionForm');
+    if (form) {
+        form.reset();
+    }
+    closeFileTypeDropdown();
+}
+
+function toggleFileTypeDropdown(event) {
+    event.stopPropagation();
+    const dropdown = document.getElementById('fileTypeDropdown');
+    const toggle = document.getElementById('fileTypeToggle');
+    if (!dropdown || !toggle) return;
+    const isOpen = dropdown.classList.contains('open');
+    if (isOpen) {
+        closeFileTypeDropdown();
+    } else {
+        openFileTypeDropdown();
+    }
+}
+
+function openFileTypeDropdown() {
+    const dropdown = document.getElementById('fileTypeDropdown');
+    const toggle = document.getElementById('fileTypeToggle');
+    if (!dropdown || !toggle) return;
+    dropdown.classList.add('open');
+    dropdown.setAttribute('aria-hidden', 'false');
+    toggle.setAttribute('aria-expanded', 'true');
+    window.addEventListener('click', closeFileTypeDropdown);
+}
+
+function closeFileTypeDropdown() {
+    const dropdown = document.getElementById('fileTypeDropdown');
+    const toggle = document.getElementById('fileTypeToggle');
+    if (!dropdown || !toggle) return;
+    dropdown.classList.remove('open');
+    dropdown.setAttribute('aria-hidden', 'true');
+    toggle.setAttribute('aria-expanded', 'false');
+    window.removeEventListener('click', closeFileTypeDropdown);
+}
+
+function updateFileTypeSummary() {
+    // Support both the inline dropdown (legacy) and the fileType modal form
+    const dropdownBoxes = Array.from(document.querySelectorAll('#fileTypeDropdown input[type="checkbox"]'));
+    const modalBoxes = Array.from(document.querySelectorAll('#fileTypeForm input[type="checkbox"]'));
+    const checkboxes = dropdownBoxes.concat(modalBoxes).filter(Boolean);
+    const selected = checkboxes.filter(box => box.checked).map(box => box.closest('label')?.textContent.trim()).filter(Boolean);
+    const summary = document.getElementById('fileTypeSummary');
+    if (!summary) return;
+
+    if (selected.length === 0) {
+        summary.textContent = 'None selected';
+        return;
+    }
+
+    if (selected.includes('Any file type')) {
+        summary.textContent = 'Any file type';
+        return;
+    }
+
+    if (selected.length === 1) {
+        summary.textContent = selected[0];
+        return;
+    }
+
+    summary.textContent = `${selected.length} selected: ${selected.slice(0, 3).join(', ')}${selected.length > 3 ? ', ...' : ''}`;
+}
+
+function combineDeadlineFields() {
+    const dateInput = document.getElementById('createDeadlineDate');
+    const timeInput = document.getElementById('createDeadlineTime');
+    const combined = document.getElementById('deadlineCombined');
+    if (!dateInput || !timeInput || !combined) return;
+
+    const dateValue = dateInput.value;
+    const timeValue = timeInput.value;
+    if (!dateValue || !timeValue) {
+        combined.value = '';
+        return;
+    }
+
+    combined.value = `${dateValue}T${timeValue}`;
+}
+
+function validateCombinedDeadline(event) {
+    const combined = document.getElementById('deadlineCombined');
+    const dateInput = document.getElementById('createDeadlineDate');
+    const timeInput = document.getElementById('createDeadlineTime');
+    if (!combined || !dateInput || !timeInput) return;
+
+    combineDeadlineFields();
+    if (!combined.value) return;
+
+    const selectedDeadline = new Date(combined.value);
+    const now = new Date();
+    if (selectedDeadline <= now) {
+        event.preventDefault();
+        alert('Deadline must be in the future.');
+        dateInput.focus();
+    }
+}
+
+const createSubmissionForm = document.getElementById('createSubmissionForm');
+if (createSubmissionForm) {
+    createSubmissionForm.addEventListener('submit', validateCombinedDeadline);
+}
+
+const deadlineDateInput = document.getElementById('createDeadlineDate');
+const deadlineTimeInput = document.getElementById('createDeadlineTime');
+if (deadlineDateInput && deadlineTimeInput) {
+    deadlineDateInput.addEventListener('change', combineDeadlineFields);
+    deadlineTimeInput.addEventListener('change', combineDeadlineFields);
+}
+
+const fileTypeInputs = document.querySelectorAll('#fileTypeDropdown input[type="checkbox"]');
+fileTypeInputs.forEach(input => {
+    input.addEventListener('change', updateFileTypeSummary);
+});
+
+// Wire modal file type inputs
+const fileTypeModalInputs = document.querySelectorAll('#fileTypeForm input[type="checkbox"]');
+fileTypeModalInputs.forEach(input => {
+    input.addEventListener('change', updateFileTypeSummary);
+});
+
+/* File type modal handlers */
+function openFileTypeModal(){
+    const modal = document.getElementById('fileTypeModal');
+    if(!modal) return;
+    modal.style.display = 'flex';
+    modal.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+}
+
+function closeFileTypeModal(){
+    const modal = document.getElementById('fileTypeModal');
+    if(!modal) return;
+    modal.classList.remove('modal-open');
+    modal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+}
+
+function saveFileTypeSelection(){
+    const form = document.getElementById('fileTypeForm');
+    const createForm = document.getElementById('createSubmissionForm');
+    if(!form || !createForm) return closeFileTypeModal();
+
+    // remove previous hidden file_types inputs
+    Array.from(createForm.querySelectorAll('input[name="file_types"][type="hidden"]')).forEach(n => n.remove());
+
+    const checked = Array.from(form.querySelectorAll('input[type="checkbox"]:checked'));
+    if(checked.length === 0){
+        // none selected -> do nothing
+        document.getElementById('fileTypeSummary').textContent = 'None selected';
+    } else if (checked.some(cb => cb.value === 'any')){
+        document.getElementById('fileTypeSummary').textContent = 'Any file type';
+        // add hidden input for any
+        const h = document.createElement('input'); h.type='hidden'; h.name='file_types'; h.value='any'; createForm.appendChild(h);
+    } else {
+        document.getElementById('fileTypeSummary').textContent = `${checked.length} selected`;
+        // add hidden inputs for each selected
+        checked.forEach(cb => {
+            const h = document.createElement('input'); h.type='hidden'; h.name='file_types'; h.value = cb.value; createForm.appendChild(h);
+        });
+    }
+
+    closeFileTypeModal();
+}
+
 function populateSubmissionModal(data) {
     // Set header information
     document.getElementById('modalClassname').textContent = data.class_name;
@@ -222,6 +414,32 @@ document.querySelectorAll('.submission-row').forEach(row => {
             openSubmissionModal(parseInt(submissionId));
         }
     });
+});
+
+// Open create submission modal buttons
+document.querySelectorAll('.open-create-submission-modal').forEach(button => {
+    button.addEventListener('click', openCreateSubmissionModal);
+});
+
+// Dismiss the modal on Escape
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        if (document.getElementById('createSubmissionModal').classList.contains('modal-open')) {
+            closeCreateSubmissionModal();
+        }
+        if (document.getElementById('submissionModal').classList.contains('modal-open')) {
+            closeSubmissionModal();
+        }
+        if (document.getElementById('editModal').classList.contains('modal-open')) {
+            closeEditModal();
+        }
+        if (document.getElementById('deleteConfirmModal').classList.contains('modal-open')) {
+            closeDeleteConfirm();
+        }
+        if (document.getElementById('previewModal').classList.contains('modal-open')) {
+            closePreviewModal();
+        }
+    }
 });
 
 // Copy to clipboard for modal code

@@ -1,0 +1,37 @@
+) accepted ('127.0.0.1', 60929)
+(29148) accepted ('127.0.0.1', 62896)
+ * Detected change in 'C:\\Users\\yestin\\Desktop\\code\\classroam-dropbox\\run.py', reloading
+ * Restarting with stat
+[2026-07-18 17:57:42,115] WARNING in admin: LibreOffice not found at C:\Program Files\LibreOffice\program\soffice.exe. DOCX/PPTX/XLSX previews will be disabled.
+Classroom Dropbox is running.
+Teacher admin: http://localhost:5000/admin
+Student address for this LAN: http://192.168.62.103:5000/
+Set CLASSROOM_DEBUG=1 only while developing; keep it off during class.
+ * Debugger is active!
+ * Debugger PIN: 116-200-864
+(26272) wsgi starting up on http://0.0.0.0:5000
+(26272) accepted ('127.0.0.1', 64935)
+127.0.0.1 - - [18/Jul/2026 17:59:10] "POST /admin/submissions/new HTTP/1.1" 302 477 0.004076
+127.0.0.1 - - [18/Jul/2026 17:59:10] "GET /admin/login?next=/admin/submissions/new HTTP/1.1" 200 1394 0.019217
+(26272) accepted ('127.0.0.1', 61815)
+127.0.0.1 - - [18/Jul/2026 17:59:10] "GET /static/css/style.css HTTP/1.1" 304 230 0.082364
+(26272) accepted ('127.0.0.1', 49666)
+127.0.0.1 - - [18/Jul/2026 17:59:12] "POST /admin/login?next=/admin/submissions/new HTTP/1.1" 302 533 0.111403
+127.0.0.1 - - [18/Jul/2026 17:59:12] "GET /admin/submissions/new HTTP/1.1" 200 10019 0.009991
+127.0.0.1 - - [18/Jul/2026 17:59:12] "GET /static/css/style.css HTTP/1.1" 304 230 0.002764
+127.0.0.1 - - [18/Jul/2026 17:59:14] "GET /admin/submissions HTTP/1.1" 200 30073 0.015628
+127.0.0.1 - - [18/Jul/2026 17:59:14] "GET /static/css/style.css HTTP/1.1" 304 230 0.002453
+127.0.0.1 - - [18/Jul/2026 17:59:14] "GET /static/js/highlight.min.js HTTP/1.1" 304 237 0.002601
+127.0.0.1 - - [18/Jul/2026 17:59:14] "GET /static/js/admin.js HTTP/1.1" 304 228 0.001557
+127.0.0.1 - - [18/Jul/2026 17:59:14] "GET /static/js/submission-modal.js HTTP/1.1" 200 21415 0.002597
+127.0.0.1 - - [18/Jul/2026 17:59:14] "GET /static/js/file-preview.js HTTP/1.1" 304 236 0.002501
+(26272) accepted ('127.0.0.1', 55885)
+(26272) accepted ('127.0.0.1', 60888)
+127.0.0.1 - - [18/Jul/2026 17:59:35] "POST /admin/submissions/new HTTP/1.1" 302 441 0.027369
+127.0.0.1 - - [18/Jul/2026 17:59:35] "GET /admin/submissions/6/created HTTP/1.1" 200 7844 0.041923
+127.0.0.1 - - [18/Jul/2026 17:59:35] "GET /static/css/style.css HTTP/1.1" 304 230 0.003488
+127.0.0.1 - - [18/Jul/2026 17:59:39] "GET /admin/submissions HTTP/1.1" 200 31414 0.002621
+127.0.0.1 - - [18/Jul/2026 17:59:39] "GET /static/css/style.css HTTP/1.1" 304 230 0.001740
+127.0.0.1 - - [18/Jul/2026 17:59:39] "GET /static/js/admin.js HTTP/1.1" 304 228 0.001810
+127.0.0.1 - - [18/Jul/2026 17:59:39] "GET /static/js/highlight.min.js HTTP/1.1" 304 237 0.001740
+127.0.0.1 - - [18/Jul/2026 17:59:39] "GET /static/js/submission-modal.j

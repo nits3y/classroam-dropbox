@@ -36,7 +36,13 @@ from app.extensions import socketio
 
 admin = Blueprint("admin", __name__, url_prefix="/admin")
 
-COMMON_FILE_TYPES = [".py", ".txt", ".pdf", ".docx", ".zip"]
+COMMON_FILE_TYPES = [
+    ".py", ".c", ".cpp", ".java", ".cs", ".kt",
+    ".sql", ".html", ".css", ".js",
+    ".xlsx", ".xls",
+    ".txt", ".pdf", ".docx", ".zip",
+    "paste",  # special token for Plain Text / Direct Paste
+]
 STATUS_LABELS = {
     "upcoming": "Upcoming",
     "ongoing": "Ongoing",
@@ -393,7 +399,14 @@ def submissions():
         ORDER BY submissions.deadline DESC
         """
     ).fetchall()
-    return render_template("admin/submissions.html", rows=rows, status_for_deadline=status_for_deadline)
+    class_rows = get_db().execute("SELECT * FROM classes ORDER BY name").fetchall()
+    return render_template(
+        "admin/submissions.html",
+        rows=rows,
+        status_for_deadline=status_for_deadline,
+        classes=class_rows,
+        common_file_types=COMMON_FILE_TYPES,
+    )
 
 
 @admin.route("/submissions/new", methods=["GET", "POST"])
@@ -706,17 +719,33 @@ def delete_submission(submission_id):
     return redirect(url_for("admin.submission_detail", submission_id=submission_id))
 
 
-def save_uploaded_file(upload, class_id, submission_id, last_name, first_name):
+def save_uploaded_file(upload, class_id, submission_id, last_name, first_name, index=None):
     original = secure_filename(upload.filename or "")
     suffix = Path(original).suffix.lower()
     timestamp = now_local().strftime("%Y%m%d_%H%M%S")
     base_name = secure_filename(f"{last_name}_{first_name}") or "student"
-    filename = f"{base_name}_{timestamp}{suffix}"
+    index_suffix = f"_{index}" if index is not None else ""
+    filename = f"{base_name}_{timestamp}{index_suffix}{suffix}"
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / str(class_id) / str(submission_id)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / filename
     upload.save(path)
     return str(path)
+
+
+def save_pasted_text(text, class_id, submission_id, last_name, first_name, suffix='.txt'):
+    """Save pasted text into the uploads folder as a file and return its path string."""
+    base_name = secure_filename(f"{last_name}_{first_name}") or "student"
+    timestamp = now_local().strftime("%Y%m%d_%H%M%S")
+    filename = f"{base_name}_{timestamp}{suffix}"
+    folder = Path(current_app.config["UPLOAD_FOLDER"]) / str(class_id) / str(submission_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / filename
+    try:
+        path.write_text(text or "", encoding="utf-8")
+        return str(path)
+    except Exception:
+        return None
 
 
 def _init_libreoffice_config():
@@ -743,11 +772,6 @@ def _init_libreoffice_config():
     except Exception as e:
         LIBREOFFICE_AVAILABLE = False
         current_app.logger.warning("LibreOffice check failed: %s", str(e))
-
-
-@admin.before_app_first_request
-def _ensure_libreoffice_checked():
-    _init_libreoffice_config()
 
 
 def try_convert_office_to_pdf(src_path: Path):

@@ -32,7 +32,7 @@ def create_app():
         LIBREOFFICE_CONVERT_TIMEOUT=int(os.environ.get("CLASSROOM_LIBREOFFICE_CONVERT_TIMEOUT", "25")),
     )
 
-    from app.admin import admin
+    from app.admin import admin, _init_libreoffice_config
     from app.db import init_app as init_db
     from app.routes import main
 
@@ -40,5 +40,9 @@ def create_app():
     app.register_blueprint(admin)
     init_db(app)
     socketio.init_app(app)
+
+    # One-time LibreOffice availability check, run now that config/blueprints are ready.
+    with app.app_context():
+        _init_libreoffice_config()
 
     return app
