@@ -31,7 +31,7 @@ from werkzeug.security import check_password_hash
 from werkzeug.utils import secure_filename
 
 from app.db import get_db
-from app.extensions import socketio
+from app.extensions import socketio, limiter
 
 
 admin = Blueprint("admin", __name__, url_prefix="/admin")
@@ -272,6 +272,7 @@ def index():
 
 
 @admin.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per 5 minutes")
 def login():
     if request.method == "POST":
         password = request.form.get("password", "")
@@ -287,6 +288,13 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("admin.login"))
+
+
+@admin.errorhandler(429)
+def ratelimit_handler(e):
+    """Handle rate limit exceeded errors."""
+    flash("Too many failed login attempts. Please wait 5 minutes before trying again.", "error")
+    return render_template("admin/login.html"), 429
 
 
 @admin.route("/dashboard")

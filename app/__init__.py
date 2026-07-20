@@ -4,7 +4,7 @@ from pathlib import Path
 from flask import Flask
 from werkzeug.security import generate_password_hash
 
-from app.extensions import socketio
+from app.extensions import socketio, limiter
 
 
 def create_app():
@@ -39,6 +39,7 @@ def create_app():
     app.register_blueprint(main)
     app.register_blueprint(admin)
     init_db(app)
+    limiter.init_app(app)
     socketio.init_app(app)
 
     # One-time LibreOffice availability check, run now that config/blueprints are ready.
