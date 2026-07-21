@@ -103,7 +103,7 @@
                 if (submitted) return;
                 var isLast = currentIndex === slides.length - 1;
                 if (isLast) {
-                    forceSubmit();
+                    if (questionTimerEl) questionTimerEl.textContent = "Time's up";
                 } else {
                     showSlide(currentIndex + 1);
                 }
