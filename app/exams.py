@@ -24,6 +24,7 @@ from app.db import get_db
 from app.extensions import socketio
 
 exams_bp = Blueprint("exams", __name__, url_prefix="/exams")
+public_exams_bp = Blueprint("public_exams", __name__)
 admin_exams_bp = Blueprint("admin_exams", __name__, url_prefix="/admin/exams")
 
 QUESTION_TYPES = {
@@ -573,6 +574,11 @@ def take_exam(code):
     attempt_id = session.get(f"exam_attempt_{exam['id']}")
     attempt = ExamStore.get_attempt(attempt_id) if attempt_id else None
 
+    if attempt and attempt["status"] != "in-progress":
+        if attempt["is_locked_out"]:
+            return redirect(url_for("exams.exam_locked", code=code))
+        return redirect(url_for("exams.exam_success", code=code))
+
     if request.method == "POST":
         if attempt is None:
             last_name = request.form.get("last_name", "").strip()
@@ -624,7 +630,30 @@ def flag_warning(code):
         abort(400)
     attempt = ExamStore.flag_warning(attempt_id)
     emit_attempt_update(exam["id"], attempt_id)
-    return {"security_warnings": attempt["security_warnings"]}
+
+    max_warnings = exam["max_security_warnings"] if exam and exam["max_security_warnings"] else 4
+    warnings_left = max(0, max_warnings - attempt["security_warnings"])
+    response = {
+        "security_warnings": attempt["security_warnings"],
+        "warnings_left": warnings_left,
+        "locked": attempt["is_locked_out"] == 1,
+        "locked_url": url_for("exams.exam_locked", code=code),
+    }
+    return response
+
+
+@exams_bp.route("/<code>/locked")
+def exam_locked(code):
+    code = normalize_code(code)
+    exam = ExamStore.get_exam_by_code(code)
+    if exam is None:
+        abort(404)
+    attempt_id = session.get(f"exam_attempt_{exam['id']}")
+    attempt = ExamStore.get_attempt(attempt_id) if attempt_id else None
+    if attempt is None or not attempt["is_locked_out"]:
+        flash("Exam session is not locked out.", "error")
+        return redirect(url_for("exams.take_exam", code=code))
+    return render_template("exams/exam_locked.html", exam=exam, attempt=attempt)
 
 
 @exams_bp.route("/<code>/success")

@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS exams (
     code TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'draft',       -- draft | active | closed
     max_attempts INTEGER NOT NULL DEFAULT 1,
-    max_security_warnings INTEGER NOT NULL DEFAULT 3,
+    max_security_warnings INTEGER NOT NULL DEFAULT 4,
     start_date TEXT,
     end_date TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -112,7 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_exam_attempts_status ON exam_attempts (status);
 # the fragment that goes after "ALTER TABLE <table> ADD COLUMN <column> ".
 COLUMN_MIGRATIONS = [
     ("exams", "time_limit_enabled", "INTEGER NOT NULL DEFAULT 1"),
-    ("exams", "max_security_warnings", "INTEGER NOT NULL DEFAULT 3"),
+    ("exams", "max_security_warnings", "INTEGER NOT NULL DEFAULT 4"),
     ("exam_questions", "time_limit_seconds", "INTEGER"),
     ("exam_attempts", "is_locked_out", "INTEGER NOT NULL DEFAULT 0"),
     ("exam_attempts", "excluded_from_attempt_count", "INTEGER NOT NULL DEFAULT 0"),
