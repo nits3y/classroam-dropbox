@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS exam_attempts (
     is_auto_submitted INTEGER NOT NULL DEFAULT 0,
     is_locked_out INTEGER NOT NULL DEFAULT 0,
     excluded_from_attempt_count INTEGER NOT NULL DEFAULT 0,
+    retake_allowed INTEGER NOT NULL DEFAULT 0,
+    ip_address TEXT,
+    device_id TEXT,
     status TEXT NOT NULL DEFAULT 'in-progress',  -- in-progress | submitted | graded
     started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     submitted_at TEXT,
@@ -116,11 +119,53 @@ COLUMN_MIGRATIONS = [
     ("exam_questions", "time_limit_seconds", "INTEGER"),
     ("exam_attempts", "is_locked_out", "INTEGER NOT NULL DEFAULT 0"),
     ("exam_attempts", "excluded_from_attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("exam_attempts", "retake_allowed", "INTEGER NOT NULL DEFAULT 0"),
+    ("exam_attempts", "ip_address", "TEXT"),
+    ("exam_attempts", "device_id", "TEXT"),
+]
+
+INDEX_MIGRATIONS = [
+    "CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam_ip ON exam_attempts (exam_id, ip_address)",
+    "CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam_device ON exam_attempts (exam_id, device_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_exam_attempts_exam_name_lower ON exam_attempts (exam_id, lower(last_name), lower(first_name)) WHERE excluded_from_attempt_count = 0",
 ]
 
 
 def _existing_columns(db, table):
     return {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+
+
+def _dedupe_exam_attempts_by_name(db):
+    duplicates = db.execute(
+        """
+        SELECT exam_id, lower(last_name) AS last_name, lower(first_name) AS first_name,
+               COUNT(*) AS count
+        FROM exam_attempts
+        WHERE excluded_from_attempt_count = 0
+        GROUP BY exam_id, lower(last_name), lower(first_name)
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for dup in duplicates:
+        rows = db.execute(
+            """
+            SELECT id FROM exam_attempts
+            WHERE exam_id = ?
+              AND lower(last_name) = ?
+              AND lower(first_name) = ?
+              AND excluded_from_attempt_count = 0
+            ORDER BY started_at DESC, id DESC
+            """,
+            (dup["exam_id"], dup["last_name"], dup["first_name"]),
+        ).fetchall()
+        if len(rows) <= 1:
+            continue
+        keep_id = rows[0]["id"]
+        for row in rows[1:]:
+            db.execute(
+                "UPDATE exam_attempts SET excluded_from_attempt_count = 1, retake_allowed = 1 WHERE id = ?",
+                (row["id"],),
+            )
 
 
 def run_migrations(db):
@@ -134,6 +179,10 @@ def run_migrations(db):
             continue
         if column not in _existing_columns(db, table):
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+    for statement in INDEX_MIGRATIONS:
+        if "idx_exam_attempts_exam_name_lower" in statement:
+            _dedupe_exam_attempts_by_name(db)
+        db.execute(statement)
     db.commit()
 
 

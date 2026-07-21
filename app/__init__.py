@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from flask import Flask
@@ -23,6 +24,14 @@ def create_app():
             "CLASSROOM_TEACHER_PASSWORD_HASH",
             generate_password_hash(os.environ.get("CLASSROOM_TEACHER_PASSWORD", "teacher")),
         ),
+        # Admin session configuration
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=int(os.environ.get("CLASSROOM_SESSION_LIFETIME_HOURS", "12"))),
+        SESSION_REFRESH_EACH_REQUEST=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.environ.get("CLASSROOM_SESSION_COOKIE_SECURE", "0") == "1",
+        ADMIN_IDLE_TIMEOUT_SECONDS=int(os.environ.get("CLASSROOM_ADMIN_IDLE_TIMEOUT_SECONDS", "3600")),
+        ADMIN_IDLE_WARNING_SECONDS=int(os.environ.get("CLASSROOM_ADMIN_IDLE_WARNING_SECONDS", "120")),
         # Path to LibreOffice `soffice.exe` for converting Office files to PDF on Windows.
         # Can be overridden via the CLASSROOM_LIBREOFFICE_PATH environment variable.
         LIBREOFFICE_PATH=os.environ.get(
@@ -52,6 +61,13 @@ def create_app():
     init_db(app)
     limiter.init_app(app)
     socketio.init_app(app)
+
+    @app.context_processor
+    def inject_admin_session_config():
+        return {
+            'ADMIN_IDLE_TIMEOUT_SECONDS': app.config['ADMIN_IDLE_TIMEOUT_SECONDS'],
+            'ADMIN_IDLE_WARNING_SECONDS': app.config['ADMIN_IDLE_WARNING_SECONDS'],
+        }
 
     # One-time LibreOffice availability check, run now that config/blueprints are ready.
     with app.app_context():

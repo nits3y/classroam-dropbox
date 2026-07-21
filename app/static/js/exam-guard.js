@@ -8,6 +8,7 @@
     var timeLimitSeconds = parseInt(card.dataset.timeLimit, 10) || 0;
 
     var form = document.getElementById("examAnswerForm");
+    var questionSlides = document.getElementById("questionSlides");
     var slides = Array.prototype.slice.call(document.querySelectorAll(".question-slide"));
     var progressLabel = document.getElementById("questionProgress");
     var prevBtn = document.getElementById("prevQuestionBtn");
@@ -16,12 +17,19 @@
     var autoSubmittedField = document.getElementById("autoSubmittedField");
     var warningCountEl = document.getElementById("warningCount");
     var maxWarningsEl = document.querySelector("[data-max-warnings]");
-    var maxWarnings = maxWarningsEl ? parseInt(maxWarningsEl.dataset.maxWarnings, 10) || 2 : 2;
+    var maxWarnings = maxWarningsEl ? parseInt(maxWarningsEl.dataset.maxWarnings, 10) || 3 : 3;
     var timerEl = document.getElementById("examTimer");
     var questionTimerRow = document.getElementById("questionTimerRow");
     var questionTimerEl = document.getElementById("questionTimer");
     var gate = document.getElementById("fullscreenGate");
     var enterFullscreenBtn = document.getElementById("enterFullscreenBtn");
+    var lockedOverlay = document.getElementById("examLockedOverlay");
+
+    [gate, document.getElementById("warningModal"), lockedOverlay].forEach(function (overlay) {
+        if (overlay && overlay.parentElement !== document.body) {
+            document.body.appendChild(overlay);
+        }
+    });
 
     var currentIndex = 0;
     var hasEnteredFullscreenOnce = false;
@@ -29,12 +37,17 @@
     var submitted = false;
     var warningInFlight = false;
     var blurTimeout = null;
+    var lastWarningMs = 0;
+    var warningCooldownMs = 2000;
+    var examStarted = false; // true only once the student has confirmed fullscreen at least once
+    var fullscreenStartRequested = false;
 
     // ------------------------------------------------------------------
     // One-question-per-view navigation
     // ------------------------------------------------------------------
 
     function showSlide(index) {
+        if (submitted) return;
         slides.forEach(function (slide, i) {
             slide.style.display = i === index ? "" : "none";
         });
@@ -46,7 +59,10 @@
         if (nextBtn) nextBtn.style.display = isLast ? "none" : "";
         if (submitBtn) submitBtn.style.display = isLast ? "" : "none";
         currentIndex = index;
-        startQuestionTimer(slides[index]);
+        // Only run the per-question countdown once the student is actually
+        // in the exam (past the fullscreen gate) — otherwise a question timer
+        // could burn down while the student is still staring at the gate.
+        if (examStarted) startQuestionTimer(slides[index]);
     }
 
     // ------------------------------------------------------------------
@@ -58,12 +74,14 @@
     // ------------------------------------------------------------------
 
     var questionTimerHandle = null;
+    var questionDeadlineMs = null;
 
     function stopQuestionTimer() {
         if (questionTimerHandle) {
-            clearInterval(questionTimerHandle);
+            clearTimeout(questionTimerHandle);
             questionTimerHandle = null;
         }
+        questionDeadlineMs = null;
     }
 
     function startQuestionTimer(slideEl) {
@@ -75,10 +93,10 @@
             return;
         }
         if (questionTimerRow) questionTimerRow.style.display = "";
-        var remaining = limit;
-        if (questionTimerEl) questionTimerEl.textContent = formatTime(remaining);
-        questionTimerHandle = setInterval(function () {
-            remaining -= 1;
+        questionDeadlineMs = Date.now() + limit * 1000;
+
+        function tickQuestionTimer() {
+            var remaining = Math.ceil((questionDeadlineMs - Date.now()) / 1000);
             if (questionTimerEl) questionTimerEl.textContent = formatTime(remaining);
             if (remaining <= 0) {
                 stopQuestionTimer();
@@ -89,28 +107,36 @@
                 } else {
                     showSlide(currentIndex + 1);
                 }
+                return;
             }
-        }, 1000);
+            questionTimerHandle = setTimeout(tickQuestionTimer, Math.min(1000, Math.max(100, questionDeadlineMs - Date.now())));
+        }
+
+        tickQuestionTimer();
     }
 
     if (nextBtn) {
         nextBtn.addEventListener("click", function () {
-            if (currentIndex < slides.length - 1) showSlide(currentIndex + 1);
+            if (submitted || currentIndex >= slides.length - 1) return;
+            showSlide(currentIndex + 1);
         });
     }
     if (prevBtn) {
         prevBtn.addEventListener("click", function () {
-            if (currentIndex > 0) showSlide(currentIndex - 1);
+            if (submitted || currentIndex <= 0) return;
+            showSlide(currentIndex - 1);
         });
     }
 
     if (slides.length > 0) showSlide(0);
+    if (!isFullscreen()) showGate();
 
     // ------------------------------------------------------------------
-    // Countdown timer
+    // Countdown timer (overall exam timer)
     // ------------------------------------------------------------------
 
-    var remainingSeconds = timeLimitSeconds;
+    var timerHandle = null;
+    var examDeadlineMs = null;
 
     function formatTime(totalSeconds) {
         var m = Math.max(0, Math.floor(totalSeconds / 60));
@@ -118,21 +144,35 @@
         return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
     }
 
-    var timerHandle = null;
-    if (timeLimitSeconds > 0 && timerEl) {
-        timerEl.textContent = formatTime(remainingSeconds);
-        timerHandle = setInterval(function () {
-            remainingSeconds -= 1;
+    function startExamTimer() {
+        if (timeLimitSeconds <= 0 || !timerEl || timerHandle) return;
+        examDeadlineMs = Date.now() + timeLimitSeconds * 1000;
+
+        function tickExamTimer() {
+            var remainingSeconds = Math.ceil((examDeadlineMs - Date.now()) / 1000);
             timerEl.textContent = formatTime(remainingSeconds);
             if (remainingSeconds <= 0) {
-                clearInterval(timerHandle);
+                clearTimeout(timerHandle);
+                timerHandle = null;
                 forceSubmit();
+                return;
             }
-        }, 1000);
+            timerHandle = setTimeout(tickExamTimer, Math.min(1000, Math.max(100, examDeadlineMs - Date.now())));
+        }
+
+        tickExamTimer();
     }
 
     // ------------------------------------------------------------------
     // Fullscreen gate
+    //
+    // IMPORTANT: browsers only allow requestFullscreen() to succeed when
+    // it's called synchronously inside a real user-gesture event handler
+    // (a click, a keypress, etc). Calling it from page-load script, from
+    // inside a setTimeout callback, or from a fetch/promise callback will
+    // silently fail in every modern browser. That's why fullscreen must
+    // always be triggered from the "Enter Fullscreen" button's click
+    // handler and never attempted automatically on page load.
     // ------------------------------------------------------------------
 
     function isFullscreen() {
@@ -143,18 +183,34 @@
         var el = document.documentElement;
         var request = el.requestFullscreen || el.webkitRequestFullscreen;
         if (request) {
-            request.call(el).catch(function () {
-                /* user dismissed the browser's own permission prompt; gate stays visible */
-            });
+            var result = request.call(el);
+            if (result && typeof result.catch === "function") {
+                result.catch(function () {
+                    /* user dismissed the browser's own permission prompt; gate stays visible */
+                });
+            }
         }
     }
 
     function showGate() {
-        if (gate) gate.style.display = "flex";
+        if (gate) {
+            gate.style.display = "flex";
+            gate.classList.add("modal-open");
+            document.body.classList.add("modal-open");
+        }
     }
 
     function hideGate() {
-        if (gate) gate.style.display = "none";
+        if (gate) {
+            gate.style.display = "none";
+            gate.classList.remove("modal-open");
+        }
+        if (
+            (!warningModal || !warningModal.classList.contains("modal-open")) &&
+            (!lockedOverlay || !lockedOverlay.classList.contains("modal-open"))
+        ) {
+            document.body.classList.remove("modal-open");
+        }
     }
 
     function exitFullscreenIfNeeded() {
@@ -167,16 +223,47 @@
         }
     }
 
+    // Gate is shown immediately on load. There is no auto-fullscreen
+    // attempt here on purpose — see note above. The student must click
+    // the button, which is a genuine user gesture and will succeed.
+    if (!isFullscreen() && gate) {
+        showGate();
+    }
+
     if (enterFullscreenBtn) {
         enterFullscreenBtn.addEventListener("click", function () {
+            fullscreenStartRequested = true;
             requestFullscreen();
         });
     }
 
+    function startExamIfFocusedFullscreen() {
+        if (submitted || examStarted || !fullscreenStartRequested || !isFullscreen() || !document.hasFocus()) return;
+        hasEnteredFullscreenOnce = true;
+        examStarted = true;
+        hideGate();
+        startExamTimer();
+        startQuestionTimer(slides[currentIndex]);
+    }
+
+    window.addEventListener("focus", function () {
+        startExamIfFocusedFullscreen();
+    });
+
+    document.addEventListener("fullscreenerror", function () {
+        showGate();
+    });
+
     document.addEventListener("fullscreenchange", function () {
         if (isFullscreen()) {
             hasEnteredFullscreenOnce = true;
-            hideGate();
+            window.focus();
+            startExamIfFocusedFullscreen();
+            if (examStarted) {
+                hideGate();
+            } else {
+                showGate();
+            }
         } else if (!submitted) {
             // Only trap/gate exits while the exam is actually in progress.
             // Once submitted is true (normal submit or forced auto-submit),
@@ -196,13 +283,13 @@
     // ------------------------------------------------------------------
 
     document.addEventListener("visibilitychange", function () {
-        if (document.hidden && hasEnteredFullscreenOnce && !submitted) {
+        if (document.hidden && examStarted && hasEnteredFullscreenOnce && !submitted) {
             flagWarning();
         }
     });
 
     window.addEventListener("blur", function () {
-        if (!hasEnteredFullscreenOnce || submitted) return;
+        if (!examStarted || !hasEnteredFullscreenOnce || submitted) return;
         if (blurTimeout) clearTimeout(blurTimeout);
         blurTimeout = setTimeout(function () {
             if (!document.hasFocus() && !submitted) flagWarning();
@@ -215,14 +302,50 @@
     });
 
     // ------------------------------------------------------------------
+    // Warning modal
+    // ------------------------------------------------------------------
+
+    var warningModal = document.getElementById("warningModal");
+    var warningMessage = document.getElementById("warningMessage");
+    var warningModalClose = document.getElementById("warningModalClose");
+
+    function showWarningModal(warningsLeft) {
+        if (!warningModal || !warningMessage) return;
+        warningMessage.textContent =
+            warningsLeft > 0
+                ? "Warning: you left fullscreen or switched away. " + warningsLeft + " warning" + (warningsLeft === 1 ? "" : "s") + " remaining."
+                : "Warning: you have reached the maximum number of warnings.";
+        warningModal.classList.add("modal-open");
+        document.body.classList.add("modal-open");
+    }
+
+    function hideWarningModal() {
+        if (!warningModal) return;
+        warningModal.classList.remove("modal-open");
+        document.body.classList.remove("modal-open");
+    }
+
+    if (warningModalClose) {
+        warningModalClose.addEventListener("click", function () {
+            hideWarningModal();
+            if (!isFullscreen()) {
+                showGate();
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Warnings + auto-submit
     // ------------------------------------------------------------------
 
     function flagWarning() {
-        if (submitted || !examCode || warningInFlight) return;
+        var now = Date.now();
+        if (submitted || !examCode || warningInFlight || now - lastWarningMs < warningCooldownMs) return;
+        lastWarningMs = now;
         warningInFlight = true;
         fetch("/exams/" + encodeURIComponent(examCode) + "/warning", {
             method: "POST",
+            credentials: "same-origin",
         })
             .then(function (response) {
                 return response.ok ? response.json() : null;
@@ -234,8 +357,17 @@
                     warningCount += 1;
                 }
                 if (warningCountEl) warningCountEl.textContent = String(warningCount);
-                if (warningCount >= maxWarnings) {
+
+                if (data && data.locked) {
                     forceSubmit();
+                    return;
+                }
+
+                var warningsLeft = data && typeof data.warnings_left === "number" ? data.warnings_left : maxWarnings - warningCount;
+                if (warningsLeft <= 0) {
+                    forceSubmit();
+                } else {
+                    showWarningModal(warningsLeft);
                 }
             })
             .catch(function () {
@@ -246,13 +378,40 @@
             });
     }
 
+    function disableExamInteraction() {
+        if (questionSlides) {
+            questionSlides.style.display = "none";
+        }
+        if (nextBtn) {
+            nextBtn.disabled = true;
+        }
+        if (prevBtn) {
+            prevBtn.disabled = true;
+        }
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
+        if (form) {
+            form.style.pointerEvents = "none";
+            form.style.opacity = "0.7";
+        }
+    }
+
     function forceSubmit() {
         if (submitted || !form) return;
         submitted = true;
-        if (timerHandle) clearInterval(timerHandle);
+        if (lockedOverlay) {
+            lockedOverlay.classList.add("modal-open");
+            document.body.classList.add("modal-open");
+        }
+        if (timerHandle) {
+            clearTimeout(timerHandle);
+            timerHandle = null;
+        }
         stopQuestionTimer();
         exitFullscreenIfNeeded();
         hideGate();
+        disableExamInteraction();
         if (autoSubmittedField) autoSubmittedField.value = "1";
         if (typeof form.requestSubmit === "function") {
             form.requestSubmit();
@@ -262,14 +421,14 @@
     }
 
     // Normal path: student clicks "Submit exam" on the last question.
-    // Previously this had no listener at all, so fullscreen was never
-    // released here — only forceSubmit() released it. That's the fix
-    // for "can't un-fullscreen": both submit paths now behave the same.
     if (form) {
         form.addEventListener("submit", function () {
             if (submitted) return; // already handled by forceSubmit
             submitted = true;
-            if (timerHandle) clearInterval(timerHandle);
+            if (timerHandle) {
+                clearTimeout(timerHandle);
+                timerHandle = null;
+            }
             stopQuestionTimer();
             exitFullscreenIfNeeded();
             hideGate();

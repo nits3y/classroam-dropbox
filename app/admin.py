@@ -279,6 +279,7 @@ def login():
         password_hash = current_app.config["TEACHER_PASSWORD_HASH"]
         if check_password_hash(password_hash, password):
             session["teacher_logged_in"] = True
+            session.permanent = True
             return redirect(request.args.get("next") or url_for("admin.dashboard"))
         flash("That password did not match.", "error")
     return render_template("admin/login.html")
@@ -288,6 +289,15 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("admin.login"))
+
+
+@admin.route("/session-refresh", methods=["POST"])
+def session_refresh():
+    if not session.get("teacher_logged_in"):
+        return {"ok": False}, 401
+    session.permanent = True
+    session.modified = True
+    return {"ok": True}
 
 
 @admin.errorhandler(429)

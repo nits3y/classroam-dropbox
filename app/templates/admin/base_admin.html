@@ -154,4 +154,188 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<div id="sessionWarningModal" class="modal-overlay" style="display:none;">
+    <div class="modal-box" style="max-width: 460px; width: 100%; text-align:center;">
+        <h2 style="margin-bottom: 0.75rem;">Session expiring soon</h2>
+        <p class="subtle" style="margin-bottom: 1.25rem;">
+            You will be logged out due to inactivity in <strong><span id="sessionWarningCountdown">120</span></strong> seconds.
+        </p>
+        <div class="form-actions" style="justify-content: center; gap: 0.75rem;">
+            <button type="button" class="button" id="extendSessionBtn">Extend session</button>
+            <button type="button" class="button secondary" id="logoutSessionBtn">Log out now</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const adminSessionRefreshUrl = "{{ url_for('admin.session_refresh') }}";
+    const adminLoginUrl = "{{ url_for('admin.login') }}";
+    const adminAuthChannelKey = 'classroam-admin-auth';
+    const sessionKeepaliveIntervalMs = 10 * 60 * 1000;
+    const idleTimeoutMs = {{ ADMIN_IDLE_TIMEOUT_SECONDS * 1000 }};
+    const idleWarningMs = {{ ADMIN_IDLE_WARNING_SECONDS * 1000 }};
+    const idleCheckIntervalMs = 1000;
+
+    const sessionWarningModal = document.getElementById('sessionWarningModal');
+    const extendSessionBtn = document.getElementById('extendSessionBtn');
+    const logoutSessionBtn = document.getElementById('logoutSessionBtn');
+    const sessionWarningCountdown = document.getElementById('sessionWarningCountdown');
+    const logoutLink = document.querySelector('.logout-link');
+
+    let keepaliveTimer = null;
+    let lastActivityAt = Date.now();
+    let warningCountdownTimer = null;
+    let warningVisible = false;
+
+    function broadcastAuthEvent(type) {
+        const payload = {type, time: Date.now()};
+        if (window.BroadcastChannel) {
+            const channel = new BroadcastChannel('classroam-admin-auth');
+            channel.postMessage(payload);
+            channel.close();
+        }
+        try {
+            localStorage.setItem(adminAuthChannelKey, JSON.stringify(payload));
+        } catch (error) {
+            // ignore private mode storage errors
+        }
+    }
+
+    function handleAuthEvent(event) {
+        let data = null;
+        try {
+            if (event.data) {
+                data = event.data;
+            } else if (event.newValue) {
+                data = JSON.parse(event.newValue);
+            }
+        } catch (err) {
+            return;
+        }
+        if (!data || data.type !== 'logout') return;
+        if (window.location.pathname !== new URL(adminLoginUrl, window.location.origin).pathname) {
+            window.location.href = adminLoginUrl;
+        }
+    }
+
+    window.addEventListener('storage', function(event) {
+        if (event.key === adminAuthChannelKey && event.newValue) {
+            handleAuthEvent(event);
+        }
+    });
+    if (window.BroadcastChannel) {
+        const authChannel = new BroadcastChannel('classroam-admin-auth');
+        authChannel.addEventListener('message', handleAuthEvent);
+    }
+
+    if (logoutLink) {
+        logoutLink.addEventListener('click', function() {
+            broadcastAuthEvent('logout');
+        });
+    }
+
+    function scheduleKeepalive() {
+        if (keepaliveTimer) {
+            clearTimeout(keepaliveTimer);
+        }
+        keepaliveTimer = setTimeout(refreshAdminSession, sessionKeepaliveIntervalMs);
+    }
+
+    function refreshAdminSession() {
+        fetch(adminSessionRefreshUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' },
+        })
+            .then(function(response) {
+                if (response.status === 401) {
+                    broadcastAuthEvent('logout');
+                    window.location.href = adminLoginUrl;
+                    return null;
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (data && data.ok) {
+                    scheduleKeepalive();
+                } else {
+                    scheduleKeepalive();
+                }
+            })
+            .catch(function() {
+                scheduleKeepalive();
+            });
+    }
+
+    function resetIdleTimer() {
+        lastActivityAt = Date.now();
+        if (warningVisible) {
+            hideSessionWarning();
+        }
+    }
+
+    function showSessionWarning() {
+        if (!sessionWarningModal || warningVisible) return;
+        warningVisible = true;
+        sessionWarningModal.style.display = 'flex';
+        sessionWarningModal.classList.add('modal-open');
+        let remainingSeconds = Math.ceil((idleTimeoutMs - (Date.now() - lastActivityAt)) / 1000);
+        sessionWarningCountdown.textContent = remainingSeconds;
+        warningCountdownTimer = setInterval(function() {
+            remainingSeconds -= 1;
+            if (remainingSeconds <= 0) {
+                clearInterval(warningCountdownTimer);
+                window.location.href = adminLoginUrl;
+                return;
+            }
+            sessionWarningCountdown.textContent = remainingSeconds;
+        }, 1000);
+    }
+
+    function hideSessionWarning() {
+        if (!sessionWarningModal || !warningVisible) return;
+        warningVisible = false;
+        sessionWarningModal.style.display = 'none';
+        sessionWarningModal.classList.remove('modal-open');
+        if (warningCountdownTimer) {
+            clearInterval(warningCountdownTimer);
+            warningCountdownTimer = null;
+        }
+    }
+
+    if (extendSessionBtn) {
+        extendSessionBtn.addEventListener('click', function() {
+            hideSessionWarning();
+            resetIdleTimer();
+            refreshAdminSession();
+        });
+    }
+
+    if (logoutSessionBtn) {
+        logoutSessionBtn.addEventListener('click', function() {
+            broadcastAuthEvent('logout');
+            window.location.href = adminLoginUrl;
+        });
+    }
+
+    ['mousemove', 'keydown', 'click', 'touchstart'].forEach(function(eventName) {
+        window.addEventListener(eventName, resetIdleTimer, true);
+    });
+
+    setInterval(function() {
+        const idleTime = Date.now() - lastActivityAt;
+        if (!warningVisible && idleTime >= idleTimeoutMs - idleWarningMs) {
+            showSessionWarning();
+        }
+        if (idleTime >= idleTimeoutMs) {
+            broadcastAuthEvent('logout');
+            window.location.href = adminLoginUrl;
+        }
+    }, idleCheckIntervalMs);
+
+    refreshAdminSession();
+})();
+</script>
 {% endblock %}

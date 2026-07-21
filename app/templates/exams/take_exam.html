@@ -45,13 +45,13 @@
 
     <form method="post" class="stacked-form" id="examJoinForm">
         <label for="last_name">Last name</label>
-        <input type="text" id="last_name" name="last_name" autocomplete="family-name" required autofocus>
+        <input type="text" id="last_name" name="last_name" autocomplete="family-name" pattern="[A-Za-z .'-]{2,60}" maxlength="60" title="Use letters, spaces, hyphens, apostrophes, or periods only." required autofocus>
 
         <label for="first_name">First name</label>
-        <input type="text" id="first_name" name="first_name" autocomplete="given-name" required>
+        <input type="text" id="first_name" name="first_name" autocomplete="given-name" pattern="[A-Za-z .'-]{2,60}" maxlength="60" title="Use letters, spaces, hyphens, apostrophes, or periods only." required>
 
         <div class="form-actions" style="margin-top: 1rem;">
-            <button type="submit">
+            <button type="submit" id="startExamBtn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
                     <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
@@ -59,6 +59,167 @@
             </button>
         </div>
     </form>
+
+    <script>
+    (function () {
+        "use strict";
+        var form = document.getElementById("examJoinForm");
+        var startBtn = document.getElementById("startExamBtn");
+        if (!form || !startBtn) return;
+        var nameInputs = Array.prototype.slice.call(form.querySelectorAll("#last_name, #first_name"));
+
+        nameInputs.forEach(function (input) {
+            input.addEventListener("input", function () {
+                input.value = input.value.replace(/[^A-Za-z .'-]/g, "");
+            });
+        });
+
+        function isFullscreen() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement);
+        }
+
+        function requestFullscreen() {
+            var request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+            if (!request) return Promise.resolve();
+            return request.call(document.documentElement) || Promise.resolve();
+        }
+
+        form.addEventListener("submit", function (event) {
+            if (!form.checkValidity()) return;
+            if (isFullscreen()) return;
+            event.preventDefault();
+            startBtn.disabled = true;
+            startBtn.textContent = "Entering fullscreen...";
+            Promise.resolve(requestFullscreen())
+                .then(function () {
+                    if (isFullscreen()) {
+                        form.submit();
+                        return;
+                    }
+                    startBtn.disabled = false;
+                    startBtn.textContent = "Start exam";
+                    alert("Please allow fullscreen mode to start the exam.");
+                })
+                .catch(function () {
+                    startBtn.disabled = false;
+                    startBtn.textContent = "Start exam";
+                    alert("Please allow fullscreen mode to start the exam.");
+                });
+        });
+    })();
+    </script>
+
+    {% elif attempt.status == 'PENDING_APPROVAL' %}
+    <div class="app-label">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0f6e56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.5rem;">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M12 6v6l4 2"/>
+        </svg>
+        Waiting Room
+    </div>
+    <div class="student-summary" style="text-align:center;">
+        <p class="eyebrow">{{ attempt.first_name }} {{ attempt.last_name }}</p>
+        <h1>{{ exam.title }}</h1>
+        <p class="student-description">Waiting for teacher approval...</p>
+        <p class="subtle">Keep this page open. The exam questions have not been loaded yet.</p>
+    </div>
+    <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+    <script>
+    (function () {
+        "use strict";
+        if (!window.io) return;
+        var socket = io();
+        var attemptId = {{ attempt.id }};
+        socket.on("connect", function () {
+            socket.emit("join_attempt_room", { attempt_id: attemptId });
+        });
+        socket.on("exam_participant_status", function (payload) {
+            if (!payload || Number(payload.attempt_id) !== attemptId) return;
+            if (payload.status === "APPROVED") {
+                window.location.reload();
+            }
+            if (payload.status === "REJECTED") {
+                window.location.reload();
+            }
+        });
+    })();
+    </script>
+
+    {% elif attempt.status == 'REJECTED' %}
+    <div class="student-summary" style="text-align:center;">
+        <h1>Entry not approved</h1>
+        <p class="subtle">Your teacher rejected this exam entry. Ask your teacher before trying again.</p>
+    </div>
+
+    {% elif attempt.status == 'APPROVED' %}
+    <div class="app-label">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0f6e56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.5rem;">
+            <path d="M20 6 9 17l-5-5"/>
+        </svg>
+        Approved
+    </div>
+    <div class="student-summary" style="text-align:center;">
+        <p class="eyebrow">{{ attempt.first_name }} {{ attempt.last_name }}</p>
+        <h1>{{ exam.title }}</h1>
+        <p class="student-description">You have been approved. Start when your teacher tells you to begin.</p>
+    </div>
+    <form method="post" class="stacked-form" id="approvedStartForm">
+        <input type="hidden" name="action" value="start_exam">
+        <div class="form-actions" style="margin-top: 1rem;">
+            <button type="submit" id="approvedStartBtn">Start exam</button>
+        </div>
+    </form>
+    <script>
+    (function () {
+        "use strict";
+        var form = document.getElementById("approvedStartForm");
+        var startBtn = document.getElementById("approvedStartBtn");
+        if (!form || !startBtn) return;
+        function isFullscreen() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement);
+        }
+        function requestFullscreen() {
+            var request = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+            if (!request) return Promise.resolve();
+            return request.call(document.documentElement) || Promise.resolve();
+        }
+        form.addEventListener("submit", function (event) {
+            if (isFullscreen()) return;
+            event.preventDefault();
+            startBtn.disabled = true;
+            startBtn.textContent = "Entering fullscreen...";
+            Promise.resolve(requestFullscreen()).then(function () {
+                if (isFullscreen()) {
+                    form.submit();
+                    return;
+                }
+                startBtn.disabled = false;
+                startBtn.textContent = "Start exam";
+                alert("Please allow fullscreen mode to start the exam.");
+            }).catch(function () {
+                startBtn.disabled = false;
+                startBtn.textContent = "Start exam";
+                alert("Please allow fullscreen mode to start the exam.");
+            });
+        });
+    })();
+    </script>
+
+    {% elif attempt.status in ('FLAGGED_OUT', 'TERMINATED_MAX_VIOLATIONS') %}
+    <div class="student-summary" style="text-align:center;">
+        <div class="app-label">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.5rem;">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M15 9l-6 6M9 9l6 6"/>
+            </svg>
+            Exam Terminated & Submitted
+        </div>
+        <h1>{{ exam.title }}</h1>
+        <p class="student-description">You have reached the maximum allowed warnings ({{ exam.max_security_warnings }}/{{ exam.max_security_warnings }}). Your answers have been automatically submitted.</p>
+        <div class="form-actions" style="justify-content: center; margin-top: 1rem; gap: 0.75rem;">
+            <a href="{{ url_for('main.code_entry') }}" class="button">Return to dashboard</a>
+        </div>
+    </div>
 
     {% else %}
     <!-- Phase 2: attempt in progress. exam-guard.js hides all but one
@@ -154,6 +315,28 @@
             <button type="button" class="button" id="enterFullscreenBtn">
                 Enter fullscreen &amp; begin
             </button>
+        </div>
+    </div>
+
+    <div id="warningModal" class="modal-overlay">
+        <div class="modal-box" style="max-width: 460px; width: 100%; text-align:center;">
+            <h2 style="margin-bottom: 0.75rem;">Security warning</h2>
+            <p id="warningMessage" class="subtle" style="margin-bottom: 1.25rem;"></p>
+            <div class="form-actions" style="justify-content: center;">
+                <button type="button" class="button" id="warningModalClose">Continue exam</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="examLockedOverlay" class="modal-overlay">
+        <div class="modal-box" style="max-width: 460px; width: 100%; text-align:center;">
+            <h2 style="margin-bottom: 0.75rem;">Exam Terminated & Submitted</h2>
+            <p class="subtle" style="margin-bottom: 1.25rem;">
+                You have reached the maximum allowed warnings ({{ exam.max_security_warnings }}/{{ exam.max_security_warnings }}). Your answers have been automatically submitted.
+            </p>
+            <div class="form-actions" style="justify-content: center; gap: 0.75rem;">
+                <a href="{{ url_for('main.code_entry') }}" class="button">Return to dashboard</a>
+            </div>
         </div>
     </div>
 

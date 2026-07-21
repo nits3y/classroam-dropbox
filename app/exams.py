@@ -13,11 +13,13 @@ class the same way `submissions` already are.
 
 import json
 import random
+import re
 import string
+import uuid
 from datetime import datetime, timedelta
 from functools import wraps
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, flash, make_response, redirect, render_template, request, session, url_for
 from flask_socketio import join_room
 
 from app.db import get_db
@@ -34,6 +36,8 @@ QUESTION_TYPES = {
     "essay",
     "word-bank",
 }
+
+NAME_RE = re.compile(r"^[A-Za-z .'-]{2,60}$")
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +60,10 @@ def now_local():
 
 def normalize_code(value):
     return (value or "").strip().upper()
+
+
+def is_valid_student_name(value):
+    return bool(NAME_RE.fullmatch((value or "").strip()))
 
 
 def generate_exam_code():
@@ -103,6 +111,31 @@ def load_options(options_text):
         return json.loads(options_text)
     except (TypeError, ValueError):
         return []
+
+
+def get_client_ip():
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.remote_addr or ""
+
+
+def get_or_create_exam_device_id():
+    device_id = (request.cookies.get("exam_device_id") or "").strip()
+    if not device_id:
+        device_id = uuid.uuid4().hex
+    return device_id
+
+
+def attach_exam_device_cookie(response, device_id):
+    response.set_cookie(
+        "exam_device_id",
+        device_id,
+        max_age=60 * 60 * 24 * 365,
+        httponly=True,
+        samesite="Lax",
+    )
+    return response
 
 
 def extract_import_questions_payload(parsed):
@@ -379,11 +412,19 @@ class ExamStore:
         ).fetchone()
 
     @staticmethod
+    def normalize_student_name(value):
+        if not value:
+            return ""
+        return re.sub(r"\s+", " ", value.strip()).lower()
+
+    @staticmethod
     def count_attempts(exam_id, last_name, first_name):
         row = get_db().execute(
             """
             SELECT COUNT(*) AS n FROM exam_attempts
-            WHERE exam_id = ? AND last_name = ? AND first_name = ?
+            WHERE exam_id = ?
+              AND lower(last_name) = lower(?)
+              AND lower(first_name) = lower(?)
               AND excluded_from_attempt_count = 0
             """,
             (exam_id, last_name, first_name),
@@ -395,7 +436,9 @@ class ExamStore:
         row = get_db().execute(
             """
             SELECT COUNT(*) AS n FROM exam_attempts
-            WHERE exam_id = ? AND last_name = ? AND first_name = ?
+            WHERE exam_id = ?
+              AND lower(last_name) = lower(?)
+              AND lower(first_name) = lower(?)
               AND is_locked_out = 1
               AND excluded_from_attempt_count = 0
             """,
@@ -404,19 +447,91 @@ class ExamStore:
         return bool(row and row["n"])
 
     @staticmethod
-    def start_attempt(exam_id, last_name, first_name):
+    def has_attempt_by_name(exam_id, last_name, first_name):
+        row = get_db().execute(
+            """
+            SELECT 1 FROM exam_attempts
+            WHERE exam_id = ?
+              AND lower(last_name) = lower(?)
+              AND lower(first_name) = lower(?)
+              AND excluded_from_attempt_count = 0
+            LIMIT 1
+            """,
+            (exam_id, last_name, first_name),
+        ).fetchone()
+        return bool(row)
+
+    @staticmethod
+    def has_attempt_for_fingerprint(exam_id, ip_address=None, device_id=None):
+        if not ip_address and not device_id:
+            return False
+        clauses = []
+        params = [exam_id]
+        if ip_address:
+            clauses.append("ip_address = ?")
+            params.append(ip_address)
+        if device_id:
+            clauses.append("device_id = ?")
+            params.append(device_id)
+        row = get_db().execute(
+            f"""
+            SELECT 1 FROM exam_attempts
+            WHERE exam_id = ?
+              AND excluded_from_attempt_count = 0
+              AND ({' OR '.join(clauses)})
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        return bool(row)
+
+    @staticmethod
+    def has_completed_fingerprint(exam_id, ip_address=None, device_id=None):
+        if not ip_address and not device_id:
+            return False
+        clauses = []
+        params = [exam_id]
+        if ip_address:
+            clauses.append("ip_address = ?")
+            params.append(ip_address)
+        if device_id:
+            clauses.append("device_id = ?")
+            params.append(device_id)
+        row = get_db().execute(
+            f"""
+            SELECT 1 FROM exam_attempts
+            WHERE exam_id = ?
+              AND status IN ('submitted', 'graded')
+              AND excluded_from_attempt_count = 0
+              AND retake_allowed = 0
+              AND ({' OR '.join(clauses)})
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+        return bool(row)
+
+    @staticmethod
+    def start_attempt(exam_id, last_name, first_name, ip_address=None, device_id=None, status="PENDING_APPROVAL"):
         db = get_db()
         now = now_local().isoformat(timespec="seconds")
         cursor = db.execute(
             """
             INSERT INTO exam_attempts
-                (exam_id, last_name, first_name, answers, started_at, status)
-            VALUES (?, ?, ?, '{}', ?, 'in-progress')
+                (exam_id, last_name, first_name, answers, started_at, status, ip_address, device_id)
+            VALUES (?, ?, ?, '{}', ?, ?, ?, ?)
             """,
-            (exam_id, last_name, first_name, now),
+            (exam_id, last_name, first_name, now, status, ip_address, device_id),
         )
         db.commit()
         return ExamStore.get_attempt(cursor.lastrowid)
+
+    @staticmethod
+    def update_attempt_status(attempt_id, status):
+        db = get_db()
+        db.execute("UPDATE exam_attempts SET status = ? WHERE id = ?", (status, attempt_id))
+        db.commit()
+        return ExamStore.get_attempt(attempt_id)
 
     @staticmethod
     def save_answer(attempt_id, question_id, answer_text):
@@ -449,8 +564,8 @@ class ExamStore:
         exam = ExamStore.get_exam(attempt["exam_id"])
         max_warnings = exam["max_security_warnings"] if exam and exam["max_security_warnings"] else 3
 
-        if attempt["status"] == "in-progress" and attempt["security_warnings"] >= max_warnings:
-            ExamStore.submit_attempt(attempt_id, is_auto_submitted=True)
+        if attempt["status"] in ("IN_PROGRESS", "in-progress") and attempt["security_warnings"] >= max_warnings:
+            ExamStore.submit_attempt(attempt_id, is_auto_submitted=True, status_override="TERMINATED_MAX_VIOLATIONS")
             db.execute(
                 "UPDATE exam_attempts SET is_locked_out = 1 WHERE id = ?",
                 (attempt_id,),
@@ -461,7 +576,7 @@ class ExamStore:
         return attempt
 
     @staticmethod
-    def submit_attempt(attempt_id, is_auto_submitted=False):
+    def submit_attempt(attempt_id, is_auto_submitted=False, status_override=None):
         attempt = ExamStore.get_attempt(attempt_id)
         if attempt is None:
             return None
@@ -494,7 +609,7 @@ class ExamStore:
 
         db = get_db()
         now = now_local().isoformat(timespec="seconds")
-        status = "submitted" if needs_manual_grading else "graded"
+        status = status_override or ("SUBMITTED" if needs_manual_grading else "GRADED")
         db.execute(
             """
             UPDATE exam_attempts
@@ -521,23 +636,38 @@ class ExamStore:
 def emit_attempt_update(exam_id, attempt_id):
     attempt = ExamStore.get_attempt(attempt_id)
     if attempt:
+        payload_attempt = serialize_attempt(attempt)
         socketio.emit(
             "exam_attempt_update",
             {
                 "exam_id": exam_id,
-                "attempt": {
-                    "id": attempt["id"],
-                    "last_name": attempt["last_name"],
-                    "first_name": attempt["first_name"],
-                    "status": attempt["status"],
-                    "security_warnings": attempt["security_warnings"],
-                    "score": attempt["score"],
-                    "total_points": attempt["total_points"],
-                    "submitted_at": attempt["submitted_at"],
-                },
+                "attempt": payload_attempt,
             },
             room=f"exam-{exam_id}",
         )
+        socketio.emit(
+            "exam_participant_status",
+            {"exam_id": exam_id, "attempt_id": attempt_id, "status": attempt["status"]},
+            room=f"attempt-{attempt_id}",
+        )
+
+
+def serialize_attempt(attempt):
+    return {
+        "id": attempt["id"],
+        "last_name": attempt["last_name"],
+        "first_name": attempt["first_name"],
+        "status": attempt["status"],
+        "security_warnings": attempt["security_warnings"],
+        "score": attempt["score"],
+        "total_points": attempt["total_points"],
+        "submitted_at": attempt["submitted_at"],
+        "is_locked_out": attempt["is_locked_out"],
+        "is_auto_submitted": attempt["is_auto_submitted"],
+        "started_at": attempt["started_at"],
+        "ip_address": attempt["ip_address"] if "ip_address" in attempt.keys() else None,
+        "device_id": attempt["device_id"] if "device_id" in attempt.keys() else None,
+    }
 
 
 @socketio.on("join_exam_room")
@@ -545,6 +675,13 @@ def handle_join_exam_room(data):
     exam_id = data.get("exam_id") if isinstance(data, dict) else None
     if exam_id:
         join_room(f"exam-{exam_id}")
+
+
+@socketio.on("join_attempt_room")
+def handle_join_attempt_room(data):
+    attempt_id = data.get("attempt_id") if isinstance(data, dict) else None
+    if attempt_id:
+        join_room(f"attempt-{attempt_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -572,33 +709,86 @@ def take_exam(code):
     questions = ExamStore.get_questions(exam["id"])
     attempt_id = session.get(f"exam_attempt_{exam['id']}")
     attempt = ExamStore.get_attempt(attempt_id) if attempt_id else None
+    if attempt and attempt["status"] in ("APPROVED", "IN_PROGRESS", "in-progress"):
+        questions = random.sample(questions, len(questions))
+    ip_address = get_client_ip()
+    device_id = get_or_create_exam_device_id()
+
+    if attempt is None and ExamStore.has_completed_fingerprint(exam["id"], ip_address, device_id):
+        response = make_response(render_template("exams/exam_completed.html", exam=exam))
+        return attach_exam_device_cookie(response, device_id)
 
     if request.method == "POST":
         if attempt is None:
-            last_name = request.form.get("last_name", "").strip()
-            first_name = request.form.get("first_name", "").strip()
+            last_name = request.form.get("last_name", "")
+            first_name = request.form.get("first_name", "")
+            last_name = re.sub(r"\s+", " ", last_name.strip())
+            first_name = re.sub(r"\s+", " ", first_name.strip())
             if not last_name or not first_name:
                 flash("Enter both your first and last name.", "error")
-                return render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None)
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None))
+                return attach_exam_device_cookie(response, device_id)
+
+            if not is_valid_student_name(last_name) or not is_valid_student_name(first_name):
+                flash("Names can only contain letters, spaces, hyphens, apostrophes, or periods.", "error")
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None))
+                return attach_exam_device_cookie(response, device_id)
+
+            if ExamStore.has_attempt_by_name(exam["id"], last_name, first_name):
+                flash(
+                    "A registration with this name already exists for this exam. Check your spelling and try again.",
+                    "error",
+                )
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None))
+                return attach_exam_device_cookie(response, device_id)
+
+            if ExamStore.has_attempt_for_fingerprint(exam["id"], ip_address, device_id):
+                flash(
+                    "A registration from this device or IP already exists for this exam. Ask your teacher for assistance.",
+                    "error",
+                )
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None))
+                return attach_exam_device_cookie(response, device_id)
+
+            if ExamStore.has_completed_fingerprint(exam["id"], ip_address, device_id):
+                response = make_response(render_template("exams/exam_completed.html", exam=exam))
+                return attach_exam_device_cookie(response, device_id)
 
             if ExamStore.is_locked_out(exam["id"], last_name, first_name):
                 flash(
                     "Your exam was locked due to repeated security warnings. Ask your teacher to grant you a new attempt.",
                     "error",
                 )
-                return render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None)
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None))
+                return attach_exam_device_cookie(response, device_id)
 
             if ExamStore.count_attempts(exam["id"], last_name, first_name) >= exam["max_attempts"]:
                 flash("You have already used your allowed attempts for this exam.", "error")
-                return render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None)
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None))
+                return attach_exam_device_cookie(response, device_id)
 
-            attempt = ExamStore.start_attempt(exam["id"], last_name, first_name)
+            attempt = ExamStore.start_attempt(exam["id"], last_name, first_name, ip_address, device_id)
             session[f"exam_attempt_{exam['id']}"] = attempt["id"]
-            return render_template(
-                "exams/take_exam.html", exam=exam, questions=questions, attempt=attempt
+            emit_attempt_update(exam["id"], attempt["id"])
+            response = make_response(
+                render_template("exams/take_exam.html", exam=exam, questions=[], attempt=attempt)
             )
+            return attach_exam_device_cookie(response, device_id)
+
+        if request.form.get("action") == "start_exam":
+            if attempt["status"] != "APPROVED":
+                response = make_response(render_template("exams/take_exam.html", exam=exam, questions=[], attempt=attempt))
+                return attach_exam_device_cookie(response, device_id)
+            attempt = ExamStore.update_attempt_status(attempt["id"], "IN_PROGRESS")
+            emit_attempt_update(exam["id"], attempt["id"])
+            response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=attempt))
+            return attach_exam_device_cookie(response, device_id)
 
         # Already-started attempt: this POST is the final submit.
+        if attempt["status"] not in ("IN_PROGRESS", "in-progress"):
+            response = make_response(render_template("exams/take_exam.html", exam=exam, questions=[], attempt=attempt))
+            return attach_exam_device_cookie(response, device_id)
+
         for question in questions:
             answer = request.form.get(f"question_{question['id']}", "")
             ExamStore.save_answer(attempt["id"], question["id"], answer)
@@ -607,9 +797,14 @@ def take_exam(code):
         ExamStore.submit_attempt(attempt["id"], is_auto_submitted=is_auto_submitted)
         emit_attempt_update(exam["id"], attempt["id"])
         session.pop(f"exam_attempt_{exam['id']}", None)
-        return redirect(url_for("exams.exam_success", code=code))
+        response = make_response(redirect(url_for("exams.exam_success", code=code)))
+        return attach_exam_device_cookie(response, device_id)
 
-    return render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=attempt)
+    if attempt and attempt["status"] not in ("IN_PROGRESS", "in-progress"):
+        questions = []
+
+    response = make_response(render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=attempt))
+    return attach_exam_device_cookie(response, device_id)
 
 
 @exams_bp.route("/<code>/warning", methods=["POST"])
@@ -624,7 +819,21 @@ def flag_warning(code):
         abort(400)
     attempt = ExamStore.flag_warning(attempt_id)
     emit_attempt_update(exam["id"], attempt_id)
-    return {"security_warnings": attempt["security_warnings"]}
+    return {
+        "security_warnings": attempt["security_warnings"],
+        "warnings_left": max(0, exam["max_security_warnings"] - attempt["security_warnings"]),
+        "locked": bool(attempt["is_locked_out"]),
+        "locked_url": url_for("exams.exam_locked", code=code),
+    }
+
+
+@exams_bp.route("/<code>/locked")
+def exam_locked(code):
+    code = normalize_code(code)
+    exam = ExamStore.get_exam_by_code(code)
+    if exam is None:
+        abort(404)
+    return render_template("exams/exam_locked.html", exam=exam)
 
 
 @exams_bp.route("/<code>/success")
@@ -829,7 +1038,63 @@ def view_attempts(exam_id):
     if exam is None:
         abort(404)
     attempts = ExamStore.get_attempts(exam_id)
+    if request.headers.get("Accept") == "application/json":
+        return {"exam_id": exam_id, "attempts": [serialize_attempt(attempt) for attempt in attempts]}
     return render_template("admin/exam_attempts.html", exam=exam, attempts=attempts)
+
+
+@admin_exams_bp.route("/<int:exam_id>/attempts/live")
+@teacher_required
+def live_attempts(exam_id):
+    exam = ExamStore.get_exam(exam_id)
+    if exam is None:
+        abort(404)
+    attempts = ExamStore.get_attempts(exam_id)
+    return {"exam_id": exam_id, "attempts": [serialize_attempt(attempt) for attempt in attempts]}
+
+
+@admin_exams_bp.route("/attempts/<int:attempt_id>/approve", methods=["POST"])
+@teacher_required
+def approve_attempt(attempt_id):
+    attempt = ExamStore.get_attempt(attempt_id)
+    if attempt is None:
+        abort(404)
+    if attempt["status"] == "PENDING_APPROVAL":
+        ExamStore.update_attempt_status(attempt_id, "APPROVED")
+        emit_attempt_update(attempt["exam_id"], attempt_id)
+    if request.headers.get("Accept") == "application/json":
+        return {"ok": True}
+    return redirect(url_for("admin_exams.view_attempts", exam_id=attempt["exam_id"]))
+
+
+@admin_exams_bp.route("/attempts/<int:attempt_id>/reject", methods=["POST"])
+@teacher_required
+def reject_attempt(attempt_id):
+    attempt = ExamStore.get_attempt(attempt_id)
+    if attempt is None:
+        abort(404)
+    if attempt["status"] == "PENDING_APPROVAL":
+        ExamStore.update_attempt_status(attempt_id, "REJECTED")
+        emit_attempt_update(attempt["exam_id"], attempt_id)
+    if request.headers.get("Accept") == "application/json":
+        return {"ok": True}
+    return redirect(url_for("admin_exams.view_attempts", exam_id=attempt["exam_id"]))
+
+
+@admin_exams_bp.route("/<int:exam_id>/attempts/admit-all", methods=["POST"])
+@teacher_required
+def admit_all_attempts(exam_id):
+    exam = ExamStore.get_exam(exam_id)
+    if exam is None:
+        abort(404)
+    attempts = ExamStore.get_attempts(exam_id)
+    for attempt in attempts:
+        if attempt["status"] == "PENDING_APPROVAL":
+            ExamStore.update_attempt_status(attempt["id"], "APPROVED")
+            emit_attempt_update(exam_id, attempt["id"])
+    if request.headers.get("Accept") == "application/json":
+        return {"ok": True}
+    return redirect(url_for("admin_exams.view_attempts", exam_id=exam_id))
 
 
 @admin_exams_bp.route("/attempts/<int:attempt_id>/grade", methods=["POST"])
@@ -856,7 +1121,13 @@ def allow_retake(attempt_id):
 
     db = get_db()
     db.execute(
-        "UPDATE exam_attempts SET is_locked_out = 0, excluded_from_attempt_count = 1 WHERE id = ?",
+        """
+        UPDATE exam_attempts
+        SET is_locked_out = 0,
+            excluded_from_attempt_count = 1,
+            retake_allowed = 1
+        WHERE id = ?
+        """,
         (attempt_id,),
     )
     db.commit()
