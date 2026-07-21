@@ -105,8 +105,25 @@ def load_options(options_text):
         return []
 
 
+def extract_import_questions_payload(parsed):
+    if isinstance(parsed, list):
+        return parsed, None
+
+    if isinstance(parsed, dict):
+        questions_payload = parsed.get("questions")
+        if isinstance(questions_payload, list):
+            return questions_payload, None
+        return None, "JSON payload must include a questions array."
+
+    return None, "JSON payload must be an array of questions or an object with a questions array."
+
+
 def normalize_imported_questions(parsed):
-    items = parsed if isinstance(parsed, list) else [parsed]
+    questions_payload, payload_error = extract_import_questions_payload(parsed)
+    if payload_error:
+        return [], [payload_error]
+
+    items = questions_payload if isinstance(questions_payload, list) else [questions_payload]
     type_map = {
         "Multiple Choice": "multiple-choice",
         "True/False": "true-false",
@@ -155,13 +172,19 @@ def normalize_imported_questions(parsed):
             if not isinstance(options_list, list):
                 errors.append(f"Item {index}: Word Bank questions require a wordBank array")
                 continue
-            correct_answer = json.dumps(correct_answers) if correct_answers else None
+            if not isinstance(correct_answers, list) or not correct_answers:
+                errors.append(f"Item {index}: Word Bank questions require a non-empty correctAnswer array")
+                continue
+            correct_answer = json.dumps(correct_answers)
         elif q_type == "multiple-choice":
             options_list = item.get("answerOptions")
             if not isinstance(options_list, list):
                 errors.append(f"Item {index}: Multiple Choice questions require an answerOptions array")
                 continue
             correct_answer = (item.get("correctAnswer") or "").strip()
+            if not correct_answer:
+                errors.append(f"Item {index}: Multiple Choice questions require a non-empty correctAnswer")
+                continue
         else:
             options_list = None
             correct_answer = (item.get("correctAnswer") or "").strip()
@@ -606,29 +629,19 @@ def create_exam():
             flash("Invalid JSON format. Please verify your syntax.", "error")
             return redirect(url_for("admin_exams.list_exams"))
 
-        if isinstance(json_payload, dict):
-            questions_payload = json_payload.get("questions")
-            if not isinstance(questions_payload, list):
-                flash("JSON payload must include a questions array.", "error")
-                return redirect(url_for("admin_exams.list_exams"))
-            title = f"Imported Exam {now_local().strftime('%Y-%m-%d %H:%M')}"
-            description = ""
-            instructions = ""
-            time_limit_enabled = True
-            minutes = 30
-            per_q_enabled = False
-            per_q_seconds = 30
-            max_attempts = 1
-        else:
-            questions_payload = json_payload
-            title = f"Imported Exam {now_local().strftime('%Y-%m-%d %H:%M')}"
-            description = ""
-            instructions = ""
-            time_limit_enabled = True
-            minutes = 30
-            per_q_enabled = False
-            per_q_seconds = 30
-            max_attempts = 1
+        questions_payload, payload_error = extract_import_questions_payload(json_payload)
+        if payload_error:
+            flash(payload_error, "error")
+            return redirect(url_for("admin_exams.list_exams"))
+
+        title = request.form.get("json_title", "").strip() or f"Imported Exam {now_local().strftime('%Y-%m-%d %H:%M')}"
+        description = request.form.get("json_description", "").strip()
+        instructions = request.form.get("json_instructions", "").strip()
+        time_limit_enabled = True
+        minutes = 30
+        per_q_enabled = False
+        per_q_seconds = 30
+        max_attempts = 1
 
         normalized_questions, import_errors = normalize_imported_questions(questions_payload)
         if import_errors:

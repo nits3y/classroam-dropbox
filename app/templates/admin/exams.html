@@ -147,10 +147,22 @@
                 </div>
 
                 <div class="form-field exam-create-tab-panel" id="jsonQuestionsPanel" role="tabpanel" aria-labelledby="jsonQuestionsTab" style="display:none;">
+                    <div class="form-field">
+                        <label>Title</label>
+                        <input type="text" name="json_title" id="jsonTitle" placeholder="e.g. Prelim Exam - Introduction to Computing" required>
+                    </div>
+                    <div class="form-field">
+                        <label>Description <span class="subtle">(optional)</span></label>
+                        <textarea name="json_description" id="jsonDescription" placeholder="Brief description of the exam" rows="3"></textarea>
+                    </div>
+                    <div class="form-field">
+                        <label>Instructions <span class="subtle">(optional)</span></label>
+                        <textarea name="json_instructions" id="jsonInstructions" placeholder="Instructions shown to students before starting" rows="3"></textarea>
+                    </div>
                     <div class="json-import-header">
                         <div>
                             <label>Import questions (JSON)</label>
-                            <span class="subtle">Import Questions JSON (Optional)</span>
+                            <span class="subtle">Paste only the question schema here: questionType, questionText, answerOptions or wordBank, correctAnswer, points, and optional per-question time limits.</span>
                         </div>
                         <button type="button" class="secondary json-template-btn" onclick="copyCreateExamJsonTemplate()">
                             📋 Copy JSON Template
@@ -159,13 +171,13 @@
                     <textarea
                         name="questions_json"
                         id="questionsJsonInput"
-                        placeholder="Paste your JSON questions payload here..."
+                        placeholder="Paste your question schema here..."
                         rows="16"
                         disabled
                         style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size:0.82rem;"
                     ></textarea>
                     <span class="subtle" style="font-size:0.75rem; margin-top:0.25rem; display:block;">
-                        Include a questions array with question text, choices or word bank items, correct answers, points, and optional per-question time limits.
+                        This field is strictly for question data: Word Bank items, answer choices, correct answers, points, and optional per-question time limits.
                     </span>
                     <div id="questionsJsonError" style="display:none; background:#fef2f2; color:#dc2626; border:1px solid #fecaca; border-radius:12px; padding:0.65rem 1rem; font-size:0.85rem; margin-top:0.5rem;">
                         Invalid JSON format. Please verify your syntax.
@@ -240,11 +252,14 @@
                     submitBtn.textContent = isJson ? 'Import JSON' : 'Create Exam';
                     banner.className = 'exam-mode-banner ' + (isJson ? 'json' : 'manual');
                     banner.textContent = isJson
-                        ? 'JSON Import Mode Selected: Paste a questions-only JSON payload below. Question structures, answer choices, points, and Word Bank items will be parsed independently from Manual Creation.'
+                        ? 'JSON Import Mode Selected: Fill in the basic exam details above, then paste your question schema (including Word Bank items) into the text area below.'
                         : 'Manual Mode Selected: Configure the exam metadata, time limits, and attempt settings below. Questions will be added step-by-step after exam creation.';
 
                     manualPanel.querySelectorAll('input, select, textarea').forEach(function(field) {
                         field.disabled = isJson;
+                    });
+                    jsonPanel.querySelectorAll('input, select, textarea').forEach(function(field) {
+                        field.disabled = !isJson;
                     });
 
                     if (!isJson) {
@@ -317,6 +332,15 @@
                         return false;
                     }
 
+                    var titleField = document.getElementById('jsonTitle');
+                    if (titleField && !titleField.value.trim()) {
+                        titleField.focus();
+                        textarea.style.borderColor = '';
+                        errorDiv.textContent = 'Enter a title for this exam before importing.';
+                        errorDiv.style.display = 'block';
+                        return false;
+                    }
+
                     try {
                         var parsed = JSON.parse(raw);
                         var items;
@@ -342,13 +366,25 @@
                                 errors.push('Item ' + (i + 1) + ': supported question types are Multiple Choice and Word Bank');
                                 continue;
                             }
-                            if (item.questionType === 'Multiple Choice' && !Array.isArray(item.answerOptions)) {
-                                errors.push('Item ' + (i + 1) + ': Multiple Choice questions require an answerOptions array');
-                                continue;
+                            if (item.questionType === 'Multiple Choice') {
+                                if (!Array.isArray(item.answerOptions)) {
+                                    errors.push('Item ' + (i + 1) + ': Multiple Choice questions require an answerOptions array');
+                                    continue;
+                                }
+                                if (!item.correctAnswer || String(item.correctAnswer).trim() === '') {
+                                    errors.push('Item ' + (i + 1) + ': Multiple Choice questions require a non-empty correctAnswer');
+                                    continue;
+                                }
                             }
-                            if (item.questionType === 'Word Bank' && !Array.isArray(item.wordBank)) {
-                                errors.push('Item ' + (i + 1) + ': Word Bank questions require a wordBank array');
-                                continue;
+                            if (item.questionType === 'Word Bank') {
+                                if (!Array.isArray(item.wordBank)) {
+                                    errors.push('Item ' + (i + 1) + ': Word Bank questions require a wordBank array');
+                                    continue;
+                                }
+                                if (!Array.isArray(item.correctAnswer) || item.correctAnswer.length === 0) {
+                                    errors.push('Item ' + (i + 1) + ': Word Bank questions require a non-empty correctAnswer array');
+                                    continue;
+                                }
                             }
                         }
                     } catch (e) {
