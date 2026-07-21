@@ -76,15 +76,17 @@
         </div>
     </div>
 
-    <p class="subtle" id="questionProgress" style="text-align:center; margin-bottom: 0.5rem;">
+    <p class="subtle" id="questionProgress" style="text-align:center; margin-bottom: 0.25rem;">
         Question 1 of {{ questions|length }}
+    </p>
+    <p class="subtle" id="questionTimerRow" style="text-align:center; margin-bottom: 0.5rem; display:none;">
+        Time for this question: <span id="questionTimer">--</span>
     </p>
 
     <form method="post" class="stacked-form" id="examAnswerForm">
         <div id="questionSlides">
         {% for question in questions %}
-        <div class="form-section question-slide" data-index="{{ loop.index0 }}" {% if not loop.first %}style="display:none;"{% endif %}>
-            <div class="section-heading">
+        <div class="form-section question-slide" data-index="{{ loop.index0 }}" data-time-limit="{{ question.time_limit_seconds or '' }}" {% if not loop.first %}style="display:none;"{% endif %}> <div class="section-heading">
                 <label>{{ loop.index }}. {{ question.question }}
                     <span class="subtle">({{ question.points }} pt{{ 's' if question.points != 1 }})</span>
                 </label>

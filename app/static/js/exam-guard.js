@@ -18,6 +18,8 @@
     var maxWarningsEl = document.querySelector("[data-max-warnings]");
     var maxWarnings = maxWarningsEl ? parseInt(maxWarningsEl.dataset.maxWarnings, 10) || 2 : 2;
     var timerEl = document.getElementById("examTimer");
+    var questionTimerRow = document.getElementById("questionTimerRow");
+    var questionTimerEl = document.getElementById("questionTimer");
     var gate = document.getElementById("fullscreenGate");
     var enterFullscreenBtn = document.getElementById("enterFullscreenBtn");
 
@@ -44,6 +46,51 @@
         if (nextBtn) nextBtn.style.display = isLast ? "none" : "";
         if (submitBtn) submitBtn.style.display = isLast ? "" : "none";
         currentIndex = index;
+        startQuestionTimer(slides[index]);
+    }
+
+    // ------------------------------------------------------------------
+    // Per-question countdown (app/exams.py exam_questions.time_limit_seconds).
+    // Independent of, and runs alongside, the overall exam timer below.
+    // Advances to the next question automatically on expiry; this is a
+    // normal pacing event, not a security violation, so it never calls
+    // flagWarning().
+    // ------------------------------------------------------------------
+
+    var questionTimerHandle = null;
+
+    function stopQuestionTimer() {
+        if (questionTimerHandle) {
+            clearInterval(questionTimerHandle);
+            questionTimerHandle = null;
+        }
+    }
+
+    function startQuestionTimer(slideEl) {
+        stopQuestionTimer();
+        if (!slideEl) return;
+        var limit = parseInt(slideEl.dataset.timeLimit, 10);
+        if (!limit || limit <= 0) {
+            if (questionTimerRow) questionTimerRow.style.display = "none";
+            return;
+        }
+        if (questionTimerRow) questionTimerRow.style.display = "";
+        var remaining = limit;
+        if (questionTimerEl) questionTimerEl.textContent = formatTime(remaining);
+        questionTimerHandle = setInterval(function () {
+            remaining -= 1;
+            if (questionTimerEl) questionTimerEl.textContent = formatTime(remaining);
+            if (remaining <= 0) {
+                stopQuestionTimer();
+                if (submitted) return;
+                var isLast = currentIndex === slides.length - 1;
+                if (isLast) {
+                    forceSubmit();
+                } else {
+                    showSlide(currentIndex + 1);
+                }
+            }
+        }, 1000);
     }
 
     if (nextBtn) {
@@ -110,6 +157,16 @@
         if (gate) gate.style.display = "none";
     }
 
+    function exitFullscreenIfNeeded() {
+        if (!isFullscreen()) return;
+        var exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) {
+            exit.call(document).catch(function () {
+                /* already exiting/exited — nothing to do */
+            });
+        }
+    }
+
     if (enterFullscreenBtn) {
         enterFullscreenBtn.addEventListener("click", function () {
             requestFullscreen();
@@ -120,9 +177,12 @@
         if (isFullscreen()) {
             hasEnteredFullscreenOnce = true;
             hideGate();
-        } else {
+        } else if (!submitted) {
+            // Only trap/gate exits while the exam is actually in progress.
+            // Once submitted is true (normal submit or forced auto-submit),
+            // exiting fullscreen is expected and should be silent.
             showGate();
-            if (hasEnteredFullscreenOnce && !submitted) {
+            if (hasEnteredFullscreenOnce) {
                 flagWarning();
             }
         }
@@ -190,12 +250,30 @@
         if (submitted || !form) return;
         submitted = true;
         if (timerHandle) clearInterval(timerHandle);
+        stopQuestionTimer();
+        exitFullscreenIfNeeded();
+        hideGate();
         if (autoSubmittedField) autoSubmittedField.value = "1";
         if (typeof form.requestSubmit === "function") {
             form.requestSubmit();
         } else {
             form.submit();
         }
+    }
+
+    // Normal path: student clicks "Submit exam" on the last question.
+    // Previously this had no listener at all, so fullscreen was never
+    // released here — only forceSubmit() released it. That's the fix
+    // for "can't un-fullscreen": both submit paths now behave the same.
+    if (form) {
+        form.addEventListener("submit", function () {
+            if (submitted) return; // already handled by forceSubmit
+            submitted = true;
+            if (timerHandle) clearInterval(timerHandle);
+            stopQuestionTimer();
+            exitFullscreenIfNeeded();
+            hideGate();
+        });
     }
 
     // Confirm before the browser's own back/refresh/close, since that
