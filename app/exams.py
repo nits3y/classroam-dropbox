@@ -384,10 +384,24 @@ class ExamStore:
             """
             SELECT COUNT(*) AS n FROM exam_attempts
             WHERE exam_id = ? AND last_name = ? AND first_name = ?
+              AND excluded_from_attempt_count = 0
             """,
             (exam_id, last_name, first_name),
         ).fetchone()
         return row["n"] if row else 0
+
+    @staticmethod
+    def is_locked_out(exam_id, last_name, first_name):
+        row = get_db().execute(
+            """
+            SELECT COUNT(*) AS n FROM exam_attempts
+            WHERE exam_id = ? AND last_name = ? AND first_name = ?
+              AND is_locked_out = 1
+              AND excluded_from_attempt_count = 0
+            """,
+            (exam_id, last_name, first_name),
+        ).fetchone()
+        return bool(row and row["n"])
 
     @staticmethod
     def start_attempt(exam_id, last_name, first_name):
@@ -427,7 +441,24 @@ class ExamStore:
             (attempt_id,),
         )
         db.commit()
-        return ExamStore.get_attempt(attempt_id)
+
+        attempt = ExamStore.get_attempt(attempt_id)
+        if attempt is None:
+            return None
+
+        exam = ExamStore.get_exam(attempt["exam_id"])
+        max_warnings = exam["max_security_warnings"] if exam and exam["max_security_warnings"] else 3
+
+        if attempt["status"] == "in-progress" and attempt["security_warnings"] >= max_warnings:
+            ExamStore.submit_attempt(attempt_id, is_auto_submitted=True)
+            db.execute(
+                "UPDATE exam_attempts SET is_locked_out = 1 WHERE id = ?",
+                (attempt_id,),
+            )
+            db.commit()
+            attempt = ExamStore.get_attempt(attempt_id)
+
+        return attempt
 
     @staticmethod
     def submit_attempt(attempt_id, is_auto_submitted=False):
@@ -548,6 +579,13 @@ def take_exam(code):
             first_name = request.form.get("first_name", "").strip()
             if not last_name or not first_name:
                 flash("Enter both your first and last name.", "error")
+                return render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None)
+
+            if ExamStore.is_locked_out(exam["id"], last_name, first_name):
+                flash(
+                    "Your exam was locked due to repeated security warnings. Ask your teacher to grant you a new attempt.",
+                    "error",
+                )
                 return render_template("exams/take_exam.html", exam=exam, questions=questions, attempt=None)
 
             if ExamStore.count_attempts(exam["id"], last_name, first_name) >= exam["max_attempts"]:
@@ -803,6 +841,26 @@ def grade_attempt(attempt_id):
         abort(404)
     if score is not None:
         ExamStore.grade_attempt(attempt_id, score)
+    return redirect(url_for("admin_exams.view_attempts", exam_id=attempt["exam_id"]))
+
+
+@admin_exams_bp.route("/attempts/<int:attempt_id>/allow-retake", methods=["POST"])
+@teacher_required
+def allow_retake(attempt_id):
+    attempt = ExamStore.get_attempt(attempt_id)
+    if attempt is None:
+        abort(404)
+    if not attempt["is_locked_out"]:
+        flash("This attempt is not locked out.", "error")
+        return redirect(url_for("admin_exams.view_attempts", exam_id=attempt["exam_id"]))
+
+    db = get_db()
+    db.execute(
+        "UPDATE exam_attempts SET is_locked_out = 0, excluded_from_attempt_count = 1 WHERE id = ?",
+        (attempt_id,),
+    )
+    db.commit()
+    flash("Retake granted. The locked attempt will no longer block a new attempt.", "success")
     return redirect(url_for("admin_exams.view_attempts", exam_id=attempt["exam_id"]))
 
 

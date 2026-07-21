@@ -68,6 +68,11 @@
                             <button type="submit" class="button small">Grade</button>
                         </form>
                         {% endif %}
+                        {% if attempt.is_locked_out %}
+                        <form method="post" action="{{ url_for('admin_exams.allow_retake', attempt_id=attempt.id) }}" style="display:inline-block;">
+                            <button type="submit" class="button small">Allow retake</button>
+                        </form>
+                        {% endif %}
                     </div>
                 </td>
             </tr>

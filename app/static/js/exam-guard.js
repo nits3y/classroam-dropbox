@@ -15,6 +15,8 @@
     var submitBtn = document.getElementById("submitExamBtn");
     var autoSubmittedField = document.getElementById("autoSubmittedField");
     var warningCountEl = document.getElementById("warningCount");
+    var maxWarningsEl = document.querySelector("[data-max-warnings]");
+    var maxWarnings = maxWarningsEl ? parseInt(maxWarningsEl.dataset.maxWarnings, 10) || 2 : 2;
     var timerEl = document.getElementById("examTimer");
     var gate = document.getElementById("fullscreenGate");
     var enterFullscreenBtn = document.getElementById("enterFullscreenBtn");
@@ -23,6 +25,8 @@
     var hasEnteredFullscreenOnce = false;
     var warningCount = warningCountEl ? parseInt(warningCountEl.textContent, 10) || 0 : 0;
     var submitted = false;
+    var warningInFlight = false;
+    var blurTimeout = null;
 
     // ------------------------------------------------------------------
     // One-question-per-view navigation
@@ -137,6 +141,14 @@
         }
     });
 
+    window.addEventListener("blur", function () {
+        if (!hasEnteredFullscreenOnce || submitted) return;
+        if (blurTimeout) clearTimeout(blurTimeout);
+        blurTimeout = setTimeout(function () {
+            if (!document.hasFocus() && !submitted) flagWarning();
+        }, 250);
+    });
+
     // Block the right-click context menu (copy/inspect shortcuts).
     document.addEventListener("contextmenu", function (event) {
         event.preventDefault();
@@ -147,7 +159,8 @@
     // ------------------------------------------------------------------
 
     function flagWarning() {
-        if (submitted || !examCode) return;
+        if (submitted || !examCode || warningInFlight) return;
+        warningInFlight = true;
         fetch("/exams/" + encodeURIComponent(examCode) + "/warning", {
             method: "POST",
         })
@@ -161,12 +174,15 @@
                     warningCount += 1;
                 }
                 if (warningCountEl) warningCountEl.textContent = String(warningCount);
-                if (warningCount >= 2) {
+                if (warningCount >= maxWarnings) {
                     forceSubmit();
                 }
             })
             .catch(function () {
                 /* network hiccup — don't block the student on a failed warning ping */
+            })
+            .finally(function () {
+                warningInFlight = false;
             });
     }
 

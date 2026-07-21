@@ -40,7 +40,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
             <path d="M12 9v2m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
         </svg>
-        On the next screen, click "Enter fullscreen" to begin. Exiting fullscreen or switching tabs counts as a warning — after 2 warnings your exam is auto-submitted.
+        On the next screen, click "Enter fullscreen" to begin. Exiting fullscreen or switching tabs counts as a warning — after {{ exam.max_security_warnings }} warnings your exam is auto-submitted.
     </div>
 
     <form method="post" class="stacked-form" id="examJoinForm">
@@ -68,10 +68,10 @@
             <p class="eyebrow">{{ attempt.first_name }} {{ attempt.last_name }}</p>
             <h1 style="margin-bottom: 0;">{{ exam.title }}</h1>
         </div>
-        <div style="text-align: right;">
+            <div style="text-align: right;" data-max-warnings="{{ exam.max_security_warnings }}">
             <div id="examTimer" class="badge ongoing" style="font-size: 1rem; padding: 0.4rem 0.8rem;">--:--</div>
             <p class="subtle" style="margin-top: 0.35rem;">
-                Warnings: <span id="warningCount">{{ attempt.security_warnings }}</span>/2
+                Warnings: <span id="warningCount">{{ attempt.security_warnings }}</span>/{{ exam.max_security_warnings }}
             </p>
         </div>
     </div>
@@ -121,13 +121,7 @@
         {% endfor %}
         </div>
 
-        <div class="form-actions" style="margin-top: 1rem; justify-content: space-between;">
-            <button type="button" class="button secondary" id="prevQuestionBtn" disabled>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
-                    <polyline points="15 18 9 12 15 6"/>
-                </svg>
-                Back
-            </button>
+        <div class="form-actions" style="margin-top: 1rem; justify-content: flex-end; gap: 0.75rem;">
             <button type="button" class="button" id="nextQuestionBtn">
                 Next
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
