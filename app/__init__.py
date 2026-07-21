@@ -34,10 +34,13 @@ def create_app():
 
     from app.admin import admin, _init_libreoffice_config
     from app.db import init_app as init_db
+    from app.exams import admin_exams_bp, exams_bp
     from app.routes import main
 
     app.register_blueprint(main)
     app.register_blueprint(admin)
+    app.register_blueprint(exams_bp)
+    app.register_blueprint(admin_exams_bp)
     init_db(app)
     limiter.init_app(app)
     socketio.init_app(app)
