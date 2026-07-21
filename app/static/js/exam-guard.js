@@ -1,177 +1,193 @@
-/**
- * exam-guard.js
- *
- * Anti-cheat guard for the student exam-taking page (ported from Fucursa's
- * src/app/exam/[id]/page.tsx fullscreen/visibility handling, rewritten as
- * plain JS against the Flask routes in app/exams.py).
- *
- * Public API (used by take_exam.html):
- *   ExamGuard.init({
- *     warningUrl:   '/exams/<code>/warning',
- *     maxWarnings:   3,
- *     onWarning:    function(count, reason) {},  // called after each violation
- *     onAutoSubmit: function() {},                // called once max is exceeded
- *   });
- *   ExamGuard.enterFullscreen();   // call from a user-gesture (Start button)
- *   ExamGuard.markStarted();       // begin monitoring
- *   ExamGuard.markSubmitting();    // call right before a normal submit
- *   ExamGuard.exitFullscreen();
- */
-(function (window, document) {
-  "use strict";
+(function () {
+    "use strict";
 
-  const ExamGuard = {
-    _opts: null,
-    _warnings: 0,
-    _started: false,
-    _reenteringFullscreen: false,
-    _submitting: false,
+    var card = document.getElementById("examCard");
+    if (!card) return;
 
-    init(opts) {
-      this._opts = Object.assign(
-        {
-          warningUrl: null,
-          maxWarnings: 3,
-          onWarning: function () {},
-          onAutoSubmit: function () {},
-        },
-        opts || {}
-      );
+    var examCode = card.dataset.examCode;
+    var timeLimitSeconds = parseInt(card.dataset.timeLimit, 10) || 0;
 
-      document.addEventListener("visibilitychange", this._handleVisibilityChange.bind(this));
-      document.addEventListener("fullscreenchange", this._handleFullscreenChange.bind(this));
-      document.addEventListener("webkitfullscreenchange", this._handleFullscreenChange.bind(this));
-      document.addEventListener("keydown", this._handleKeyDown.bind(this), true);
-      document.addEventListener("contextmenu", this._handleRightClick.bind(this));
-      window.addEventListener("blur", this._handleWindowBlur.bind(this));
-    },
+    var form = document.getElementById("examAnswerForm");
+    var slides = Array.prototype.slice.call(document.querySelectorAll(".question-slide"));
+    var progressLabel = document.getElementById("questionProgress");
+    var prevBtn = document.getElementById("prevQuestionBtn");
+    var nextBtn = document.getElementById("nextQuestionBtn");
+    var submitBtn = document.getElementById("submitExamBtn");
+    var autoSubmittedField = document.getElementById("autoSubmittedField");
+    var warningCountEl = document.getElementById("warningCount");
+    var timerEl = document.getElementById("examTimer");
+    var gate = document.getElementById("fullscreenGate");
+    var enterFullscreenBtn = document.getElementById("enterFullscreenBtn");
 
-    markStarted() {
-      this._started = true;
-    },
+    var currentIndex = 0;
+    var hasEnteredFullscreenOnce = false;
+    var warningCount = warningCountEl ? parseInt(warningCountEl.textContent, 10) || 0 : 0;
+    var submitted = false;
 
-    markSubmitting() {
-      this._submitting = true;
-    },
+    // ------------------------------------------------------------------
+    // One-question-per-view navigation
+    // ------------------------------------------------------------------
 
-    async enterFullscreen() {
-      try {
-        if (document.fullscreenElement) return true;
-        const el = document.documentElement;
-        if (el.requestFullscreen) {
-          await el.requestFullscreen();
-        } else if (el.webkitRequestFullscreen) {
-          await el.webkitRequestFullscreen();
-        } else if (el.msRequestFullscreen) {
-          await el.msRequestFullscreen();
+    function showSlide(index) {
+        slides.forEach(function (slide, i) {
+            slide.style.display = i === index ? "" : "none";
+        });
+        if (progressLabel) {
+            progressLabel.textContent = "Question " + (index + 1) + " of " + slides.length;
+        }
+        if (prevBtn) prevBtn.disabled = index === 0;
+        var isLast = index === slides.length - 1;
+        if (nextBtn) nextBtn.style.display = isLast ? "none" : "";
+        if (submitBtn) submitBtn.style.display = isLast ? "" : "none";
+        currentIndex = index;
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener("click", function () {
+            if (currentIndex < slides.length - 1) showSlide(currentIndex + 1);
+        });
+    }
+    if (prevBtn) {
+        prevBtn.addEventListener("click", function () {
+            if (currentIndex > 0) showSlide(currentIndex - 1);
+        });
+    }
+
+    if (slides.length > 0) showSlide(0);
+
+    // ------------------------------------------------------------------
+    // Countdown timer
+    // ------------------------------------------------------------------
+
+    var remainingSeconds = timeLimitSeconds;
+
+    function formatTime(totalSeconds) {
+        var m = Math.max(0, Math.floor(totalSeconds / 60));
+        var s = Math.max(0, Math.floor(totalSeconds % 60));
+        return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+    var timerHandle = null;
+    if (timeLimitSeconds > 0 && timerEl) {
+        timerEl.textContent = formatTime(remainingSeconds);
+        timerHandle = setInterval(function () {
+            remainingSeconds -= 1;
+            timerEl.textContent = formatTime(remainingSeconds);
+            if (remainingSeconds <= 0) {
+                clearInterval(timerHandle);
+                forceSubmit();
+            }
+        }, 1000);
+    }
+
+    // ------------------------------------------------------------------
+    // Fullscreen gate
+    // ------------------------------------------------------------------
+
+    function isFullscreen() {
+        return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    function requestFullscreen() {
+        var el = document.documentElement;
+        var request = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (request) {
+            request.call(el).catch(function () {
+                /* user dismissed the browser's own permission prompt; gate stays visible */
+            });
+        }
+    }
+
+    function showGate() {
+        if (gate) gate.style.display = "flex";
+    }
+
+    function hideGate() {
+        if (gate) gate.style.display = "none";
+    }
+
+    if (enterFullscreenBtn) {
+        enterFullscreenBtn.addEventListener("click", function () {
+            requestFullscreen();
+        });
+    }
+
+    document.addEventListener("fullscreenchange", function () {
+        if (isFullscreen()) {
+            hasEnteredFullscreenOnce = true;
+            hideGate();
         } else {
-          console.warn("Fullscreen API not supported in this browser.");
-          return false;
+            showGate();
+            if (hasEnteredFullscreenOnce && !submitted) {
+                flagWarning();
+            }
         }
-        return true;
-      } catch (err) {
-        console.error("Failed to enter fullscreen:", err);
-        return false;
-      }
-    },
+    });
+    document.addEventListener("webkitfullscreenchange", function () {
+        document.dispatchEvent(new Event("fullscreenchange"));
+    });
 
-    async exitFullscreen() {
-      try {
-        if (document.fullscreenElement && document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
-          await document.webkitExitFullscreen();
+    // ------------------------------------------------------------------
+    // Tab-switch / window-blur detection
+    // ------------------------------------------------------------------
+
+    document.addEventListener("visibilitychange", function () {
+        if (document.hidden && hasEnteredFullscreenOnce && !submitted) {
+            flagWarning();
         }
-      } catch (err) {
-        console.error("Failed to exit fullscreen:", err);
-      }
-    },
+    });
 
-    async _reenterFullscreen() {
-      this._reenteringFullscreen = true;
-      const ok = await this.enterFullscreen();
-      window.setTimeout(() => {
-        this._reenteringFullscreen = false;
-      }, 400);
-      return ok;
-    },
-
-    _handleVisibilityChange() {
-      if (!this._started || this._submitting) return;
-      if (document.hidden) {
-        this._recordViolation("Switched tabs or minimized the window");
-      }
-    },
-
-    _handleWindowBlur() {
-      if (!this._started || this._submitting) return;
-      if (document.fullscreenElement || document.webkitFullscreenElement) {
-        this._recordViolation("Window lost focus");
-      }
-    },
-
-    _handleFullscreenChange() {
-      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
-      if (isFullscreen) return;
-      if (!this._started || this._reenteringFullscreen || this._submitting) return;
-      this._recordViolation("Exited fullscreen mode");
-      this._reenterFullscreen();
-    },
-
-    _handleKeyDown(event) {
-      if (!this._started || this._submitting) return;
-      const key = event.key;
-      const blockedCombos =
-        (event.altKey && key === "Tab") ||
-        (event.metaKey && key === "Tab") ||
-        (event.ctrlKey && ["t", "n", "w"].includes((key || "").toLowerCase())) ||
-        key === "F11" ||
-        key === "Escape" ||
-        (event.ctrlKey && event.shiftKey && (key === "I" || key === "J" || key === "C")) ||
-        key === "F12";
-
-      if (blockedCombos) {
+    // Block the right-click context menu (copy/inspect shortcuts).
+    document.addEventListener("contextmenu", function (event) {
         event.preventDefault();
-        event.stopPropagation();
-        this._recordViolation("Attempted a blocked keyboard shortcut");
-      }
-    },
+    });
 
-    _handleRightClick(event) {
-      if (!this._started || this._submitting) return;
-      event.preventDefault();
-    },
+    // ------------------------------------------------------------------
+    // Warnings + auto-submit
+    // ------------------------------------------------------------------
 
-    _recordViolation(reason) {
-      this._warnings += 1;
-      console.warn("Exam security warning:", reason, "(" + this._warnings + ")");
-
-      if (this._opts.warningUrl) {
-        fetch(this._opts.warningUrl, {
-          method: "POST",
-          headers: { "X-Requested-With": "XMLHttpRequest" },
+    function flagWarning() {
+        if (submitted || !examCode) return;
+        fetch("/exams/" + encodeURIComponent(examCode) + "/warning", {
+            method: "POST",
         })
-          .then((res) => (res.ok ? res.json() : null))
-          .then((data) => {
-            if (data && typeof data.security_warnings === "number") {
-              this._warnings = data.security_warnings;
-            }
-            this._opts.onWarning(this._warnings, reason);
-            if (this._warnings >= this._opts.maxWarnings) {
-              this._submitting = true;
-              this._opts.onAutoSubmit();
-            }
-          })
-          .catch((err) => console.error("Failed to report exam warning:", err));
-      } else {
-        this._opts.onWarning(this._warnings, reason);
-        if (this._warnings >= this._opts.maxWarnings) {
-          this._submitting = true;
-          this._opts.onAutoSubmit();
-        }
-      }
-    },
-  };
+            .then(function (response) {
+                return response.ok ? response.json() : null;
+            })
+            .then(function (data) {
+                if (data && typeof data.security_warnings === "number") {
+                    warningCount = data.security_warnings;
+                } else {
+                    warningCount += 1;
+                }
+                if (warningCountEl) warningCountEl.textContent = String(warningCount);
+                if (warningCount >= 2) {
+                    forceSubmit();
+                }
+            })
+            .catch(function () {
+                /* network hiccup — don't block the student on a failed warning ping */
+            });
+    }
 
-  window.ExamGuard = ExamGuard;
-})(window, document);
+    function forceSubmit() {
+        if (submitted || !form) return;
+        submitted = true;
+        if (timerHandle) clearInterval(timerHandle);
+        if (autoSubmittedField) autoSubmittedField.value = "1";
+        if (typeof form.requestSubmit === "function") {
+            form.requestSubmit();
+        } else {
+            form.submit();
+        }
+    }
+
+    // Confirm before the browser's own back/refresh/close, since that
+    // would otherwise silently drop the in-progress attempt.
+    window.addEventListener("beforeunload", function (event) {
+        if (!submitted) {
+            event.preventDefault();
+            event.returnValue = "";
+        }
+    });
+})();

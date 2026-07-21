@@ -102,6 +102,34 @@ CREATE INDEX IF NOT EXISTS idx_exam_attempts_exam_id ON exam_attempts (exam_id);
 CREATE INDEX IF NOT EXISTS idx_exam_attempts_status ON exam_attempts (status);
 """
 
+# Columns added after tables already existed in deployed databases.
+# CREATE TABLE IF NOT EXISTS above is a no-op once a table exists, so any
+# new column has to be added here instead, or it silently never appears
+# in older database files. Each entry is (table, column, ddl) where ddl is
+# the fragment that goes after "ALTER TABLE <table> ADD COLUMN <column> ".
+COLUMN_MIGRATIONS = [
+    ("exams", "time_limit_enabled", "INTEGER NOT NULL DEFAULT 1"),
+    ("exam_questions", "time_limit_seconds", "INTEGER"),
+]
+
+
+def _existing_columns(db, table):
+    return {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+
+
+def run_migrations(db):
+    for table, column, ddl in COLUMN_MIGRATIONS:
+        # Table might not exist yet on a fresh database — the SCHEMA script
+        # above already created it with the column, so skip in that case.
+        table_exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+        ).fetchone()
+        if not table_exists:
+            continue
+        if column not in _existing_columns(db, table):
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+    db.commit()
+
 
 def get_db():
     if "db" not in g:
@@ -123,6 +151,7 @@ def init_db():
     db = get_db()
     db.executescript(SCHEMA)
     db.commit()
+    run_migrations(db)
 
 
 def init_app(app):
