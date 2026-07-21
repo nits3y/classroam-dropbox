@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}{{ exam.title }} — Exam — Classroom Dropbox{% endblock %}
+
+{% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+        <div class="flash {{ category }}" style="max-width: 640px; margin: 0 auto 1rem;">{{ message }}</div>
+    {% endfor %}
+{% endwith %}
+
+{% if not attempt %}
+<!-- Join screen: student enters their name before the exam locks into fullscreen. -->
+<div class="card student-card" id="examJoinCard">
+    <div class="app-label">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0f6e56" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: 0 auto 0.5rem;">
+            <path d="M9 12l2 2 4-4"/>
+            <circle cx="12" cy="12" r="10"/>
+        </svg>
+        Exam
+    </div>
+    <div class="student-summary">
+        <p class="eyebrow">Exam code {{ exam.code }}</p>
+        <h1>{{ exam.title }}</h1>
+        {% if exam.description %}
+        <p class="student-description">{{ exam.description }}</p>
+        {% endif %}
+        <p class="subtle" style="margin-top: 0.75rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Time limit: {{ (exam.time_limit_seconds // 60) }} minutes
+        </p>
+    </div>
+
+    {% if exam.instructions %}
+    <div class="closed-note" style="background: #f8fafc; border-color: #e2e8f0; color: #475569;">
+        <strong style="display:block; margin-bottom: 0.35rem;">Instructions</strong>
+        {{ exam.instructions }}
+    </div>
+    {% endif %}
+
+    <div class="closed-note" style="margin-top: 0.75rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        This exam runs in fullscreen mode. Switching tabs, exiting fullscreen, or using
+        shortcuts like Alt+Tab will be flagged, and the exam auto-submits after
+        {{ exam.security_max_warnings if exam.security_max_warnings else 3 }} warnings.
+    </div>
+
+    <form id="examJoinForm" method="post" class="stacked-form" style="margin-top: 1.25rem;">
+        <label for="last_name">Last name</label>
+        <input type="text" id="last_name" name="last_name" autocomplete="family-name" required autofocus>
+
+        <label for="first_name">First name</label>
+        <input type="text" id="first_name" name="first_name" autocomplete="given-name" required>
+
+        <div class="form-actions" style="margin-top: 1rem;">
+            <button type="submit" id="startExamBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Start exam (fullscreen)
+            </button>
+        </div>
+    </form>
+</div>
+
+{% else %}
+<!-- Exam-taking screen -->
+<div class="exam-shell" id="examShell">
+    <div class="exam-topbar">
+        <div>
+            <p class="eyebrow" style="margin:0;">{{ exam.title }}</p>
+            <p class="subtle" style="margin:0; font-size:0.8rem;">{{ attempt.first_name }} {{ attempt.last_name }}</p>
+        </div>
+        <div class="exam-timer" id="examTimer">--:--</div>
+        <div class="exam-warnings" id="examWarnings" style="display:none;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span id="examWarningsText">0 warnings</span>
+        </div>
+    </div>
+
+    <form id="examForm" method="post" class="card exam-form" style="max-width: 720px; margin: 1.5rem auto;">
+        {% for question in questions %}
+        <div class="form-section exam-question" data-question-id="{{ question.id }}">
+            <div class="section-heading">
+                <label>{{ loop.index }}. {{ question.question }}
+                    {% if question.is_required %}<span style="color:#dc2626;">*</span>{% endif %}
+                </label>
+                <p class="subtle" style="margin: 0.25rem 0 0; font-size: 0.78rem;">{{ question.points }} point{{ 's' if question.points != 1 else '' }}</p>
+            </div>
+
+            {% if question.type in ('multiple-choice', 'true-false') %}
+                {% set opts = (question.options | from_json) if question.type == 'multiple-choice' else ['True', 'False'] %}
+                <div class="exam-options">
+                    {% for opt in opts %}
+                    <label class="check">
+                        <input type="radio" name="question_{{ question.id }}" value="{{ opt }}" {% if question.is_required %}required{% endif %}>
+                        {{ opt }}
+                    </label>
+                    {% endfor %}
+                </div>
+            {% elif question.type == 'essay' %}
+                <textarea name="question_{{ question.id }}" rows="6" placeholder="Write your answer..." {% if question.is_required %}required{% endif %}></textarea>
+            {% else %}
+                <input type="text" name="question_{{ question.id }}" placeholder="Your answer" {% if question.is_required %}required{% endif %}>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <input type="hidden" name="auto_submitted" id="autoSubmittedField" value="0">
+
+        <div class="form-actions" style="margin-top: 1rem;">
+            <button type="submit" id="submitExamBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+                    <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                Submit exam
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="modal-overlay" id="autoSubmitModal" style="display:none;">
+    <div class="modal-box">
+        <div class="modal-icon-wrap">
+            <svg class="modal-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+        </div>
+        <h1 class="modal-title">Too many security warnings</h1>
+        <p class="modal-desc">Your exam is being submitted automatically because fullscreen/tab-switch rules were broken too many times.</p>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/exam-guard.js') }}"></script>
+<script>
+(function () {
+    const timeLimitSeconds = {{ exam.time_limit_seconds }};
+    const warningUrl = {{ url_for('exams.flag_warning', code=exam.code) | tojson }};
+    const maxWarnings = 3;
+    const form = document.getElementById('examForm');
+    const timerEl = document.getElementById('examTimer');
+    const warningsBox = document.getElementById('examWarnings');
+    const warningsText = document.getElementById('examWarningsText');
+    const autoSubmitModal = document.getElementById('autoSubmitModal');
+    const autoSubmittedField = document.getElementById('autoSubmittedField');
+
+    let remaining = timeLimitSeconds;
+    let timerHandle = null;
+
+    function formatTime(totalSeconds) {
+        const s = Math.max(0, totalSeconds);
+        const m = Math.floor(s / 60);
+        const sec = s % 60;
+        return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+    }
+
+    function tick() {
+        remaining -= 1;
+        timerEl.textContent = formatTime(remaining);
+        if (remaining <= 60) {
+            timerEl.classList.add('exam-timer-low');
+        }
+        if (remaining <= 0) {
+            clearInterval(timerHandle);
+            doAutoSubmit();
+        }
+    }
+
+    function doAutoSubmit() {
+        autoSubmittedField.value = '1';
+        ExamGuard.markSubmitting();
+        ExamGuard.exitFullscreen();
+        form.submit();
+    }
+
+    ExamGuard.init({
+        warningUrl: warningUrl,
+        maxWarnings: maxWarnings,
+        onWarning: function (count) {
+            warningsBox.style.display = 'inline-flex';
+            warningsText.textContent = count + ' warning' + (count === 1 ? '' : 's') + ' of ' + maxWarnings;
+        },
+        onAutoSubmit: function () {
+            autoSubmitModal.style.display = 'flex';
+            window.setTimeout(doAutoSubmit, 1500);
+        },
+    });
+
+    form.addEventListener('submit', function () {
+        ExamGuard.markSubmitting();
+        ExamGuard.exitFullscreen();
+    });
+
+    ExamGuard.enterFullscreen().then(function () {
+        ExamGuard.markStarted();
+        timerEl.textContent = formatTime(remaining);
+        timerHandle = setInterval(tick, 1000);
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

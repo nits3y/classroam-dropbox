@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -31,6 +32,13 @@ def create_app():
         # Conversion timeout for LibreOffice in seconds
         LIBREOFFICE_CONVERT_TIMEOUT=int(os.environ.get("CLASSROOM_LIBREOFFICE_CONVERT_TIMEOUT", "25")),
     )
+
+    @app.template_filter("from_json")
+    def from_json_filter(value):
+        try:
+            return json.loads(value or "[]")
+        except (TypeError, ValueError):
+            return []
 
     from app.admin import admin, _init_libreoffice_config
     from app.db import init_app as init_db
