@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS exams (
     description TEXT,
     instructions TEXT,
     time_limit_seconds INTEGER NOT NULL DEFAULT 1800,
+    time_limit_enabled INTEGER NOT NULL DEFAULT 1,
     code TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'draft',       -- draft | active | closed
     max_attempts INTEGER NOT NULL DEFAULT 1,
@@ -64,13 +65,14 @@ CREATE TABLE IF NOT EXISTS exam_questions (
     exam_id INTEGER NOT NULL,
     question TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'multiple-choice',
-        -- multiple-choice | true-false | short-answer | identification | essay
-    options TEXT,               -- JSON array, only for multiple-choice
+        -- multiple-choice | true-false | short-answer | identification | essay | word-bank
+    options TEXT,               -- JSON array, only for multiple-choice or word-bank
     correct_answer TEXT,        -- null for essay (manually graded)
     explanation TEXT,
     points INTEGER NOT NULL DEFAULT 1,
     is_required INTEGER NOT NULL DEFAULT 1,
     sort_order INTEGER NOT NULL DEFAULT 0,
+    time_limit_seconds INTEGER, -- per-question time limit in seconds (null = no per-question limit)
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (exam_id) REFERENCES exams (id) ON DELETE CASCADE

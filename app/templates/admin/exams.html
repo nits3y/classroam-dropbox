@@ -1,0 +1,381 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Exams — Classroom Dropbox{% endblock %}
+{% block page_title %}Exams{% endblock %}
+
+{% block admin_content %}
+<div class="page-heading">
+    <h1>Exams</h1>
+    <button class="button" id="createExamBtn" onclick="document.getElementById('createExamModal').classList.add('modal-open')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        Create exam
+    </button>
+</div>
+
+{% if exams %}
+<div class="table-wrap panel" style="padding:0;">
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Class</th>
+                <th>Code</th>
+                <th>Time limit</th>
+                <th>Attempts</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for exam in exams %}
+            {% set cls = classes | selectattr('id', 'equalto', exam.class_id) | first %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="row-title-link">
+                        {{ exam.title }}
+                    </a>
+                </td>
+                <td>{{ cls.name if cls else '—' }}</td>
+                <td><span class="code-pill">{{ exam.code }}</span></td>
+                <td>{{ exam.time_limit_seconds // 60 }} min</td>
+                <td>{{ exam.max_attempts }}</td>
+                <td>
+                    <span class="badge {% if exam.status == 'active' %}ongoing{% elif exam.status == 'closed' %}closed{% else %}upcoming{% endif %}">
+                        {{ exam.status }}
+                    </span>
+                </td>
+                <td>
+                    <div class="row-actions" style="gap:0.35rem;">
+                        <a href="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="button small secondary">Questions</a>
+                        <a href="{{ url_for('admin_exams.view_attempts', exam_id=exam.id) }}" class="button small secondary">Attempts</a>
+                        {% if exam.status == 'draft' %}
+                        <form method="post" action="{{ url_for('admin_exams.activate_exam', exam_id=exam.id) }}" style="display:inline;">
+                            <button type="submit" class="button small">Activate</button>
+                        </form>
+                        {% elif exam.status == 'active' %}
+                        <form method="post" action="{{ url_for('admin_exams.close_exam', exam_id=exam.id) }}" style="display:inline;">
+                            <button type="submit" class="button small secondary">Close</button>
+                        </form>
+                        {% endif %}
+                        <form method="post" action="{{ url_for('admin_exams.delete_exam', exam_id=exam.id) }}" style="display:inline;" onsubmit="return confirm('Delete this exam and all its data?');">
+                            <button type="submit" class="button small danger-link">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="panel" style="text-align:center; padding:3rem 2rem;">
+    <p class="subtle" style="margin-bottom:0.5rem;">No exams yet.</p>
+    <p class="subtle" style="font-size:0.82rem;">Create your first exam to get started.</p>
+</div>
+{% endif %}
+
+<!-- Create Exam Modal -->
+<div class="modal-overlay" id="createExamModal">
+    <div class="modal-content modal-create">
+        <div class="modal-create-header">
+            <h2>Create exam</h2>
+            <button class="modal-close-btn" onclick="document.getElementById('createExamModal').classList.remove('modal-open')" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <form method="post" action="{{ url_for('admin_exams.create_exam') }}" class="create-submission-form" id="createExamForm" onsubmit="return validateCreateExamJson()">
+                <input type="hidden" name="exam_mode" id="examModeInput" value="manual">
+                <div class="exam-create-tabs" role="tablist" aria-label="Exam creation mode">
+                    <button type="button" class="exam-create-tab active" id="manualQuestionsTab" onclick="switchCreateExamQuestionTab('manual')" role="tab" aria-selected="true" aria-controls="manualExamPanel">
+                        Manual Creation
+                    </button>
+                    <button type="button" class="exam-create-tab" id="jsonQuestionsTab" onclick="switchCreateExamQuestionTab('json')" role="tab" aria-selected="false" aria-controls="jsonQuestionsPanel">
+                        JSON Import
+                    </button>
+                </div>
+
+                <div class="exam-mode-banner manual" id="examModeBanner">
+                    Manual Mode Selected: Configure the exam metadata, time limits, and attempt settings below. Questions will be added step-by-step after exam creation.
+                </div>
+
+                <div class="exam-create-mode-panel" id="manualExamPanel" role="tabpanel" aria-labelledby="manualQuestionsTab">
+                <div class="form-field">
+                    <label>Title</label>
+                    <input type="text" name="title" placeholder="e.g. Midterm Exam" required>
+                </div>
+                <div class="form-field">
+                    <label>Description <span class="subtle">(optional)</span></label>
+                    <textarea name="description" placeholder="Brief description of the exam" rows="3"></textarea>
+                </div>
+                <div class="form-field">
+                    <label>Instructions <span class="subtle">(optional)</span></label>
+                    <textarea name="instructions" placeholder="Instructions shown to students before starting" rows="3"></textarea>
+                </div>
+
+                <!-- Overall Time Limit -->
+                <div class="form-field">
+                    <label class="check" style="display:flex; align-items:center; gap:0.5rem; margin:0; cursor:pointer;">
+                        <input type="checkbox" name="time_limit_enabled" value="1" checked id="timeLimitToggle" onchange="toggleTimeLimit()">
+                        Overall exam time limit
+                    </label>
+                    <div id="timeLimitFields" style="display:flex; gap:0.75rem; align-items:center; margin-top:0.25rem;">
+                        <input type="number" name="time_limit_minutes" value="30" min="1" max="480" id="timeLimitMinutes" style="width:100px; margin-bottom:0;">
+                        <span class="subtle">minutes</span>
+                    </div>
+                </div>
+
+                <!-- Per-Question Time Limit -->
+                <div class="form-field">
+                    <label class="check" style="display:flex; align-items:center; gap:0.5rem; margin:0; cursor:pointer;">
+                        <input type="checkbox" name="per_question_time_enabled" value="1" id="perQToggle" onchange="togglePerQ()">
+                        Per-question time limit
+                    </label>
+                    <div id="perQFields" style="display:none; gap:0.75rem; align-items:center; margin-top:0.25rem;">
+                        <input type="number" name="per_question_time_seconds" value="30" min="5" max="600" id="perQSeconds" style="width:100px; margin-bottom:0;">
+                        <span class="subtle">seconds per question</span>
+                    </div>
+                </div>
+
+                <div class="form-field">
+                    <label>Max attempts per student</label>
+                    <input type="number" name="max_attempts" value="1" min="1" max="10" required>
+                </div>
+                </div>
+
+                <div class="form-field exam-create-tab-panel" id="jsonQuestionsPanel" role="tabpanel" aria-labelledby="jsonQuestionsTab" style="display:none;">
+                    <div class="json-import-header">
+                        <div>
+                            <label>Import questions (JSON)</label>
+                            <span class="subtle">Import Questions JSON (Optional)</span>
+                        </div>
+                        <button type="button" class="secondary json-template-btn" onclick="copyCreateExamJsonTemplate()">
+                            📋 Copy JSON Template
+                        </button>
+                    </div>
+                    <textarea
+                        name="questions_json"
+                        id="questionsJsonInput"
+                        placeholder="Paste your JSON questions payload here..."
+                        rows="16"
+                        disabled
+                        style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size:0.82rem;"
+                    ></textarea>
+                    <span class="subtle" style="font-size:0.75rem; margin-top:0.25rem; display:block;">
+                        Include a questions array with question text, choices or word bank items, correct answers, points, and optional per-question time limits.
+                    </span>
+                    <div id="questionsJsonError" style="display:none; background:#fef2f2; color:#dc2626; border:1px solid #fecaca; border-radius:12px; padding:0.65rem 1rem; font-size:0.85rem; margin-top:0.5rem;">
+                        Invalid JSON format. Please verify your syntax.
+                    </div>
+                </div>
+                <script>
+                var createExamJsonTemplate = {
+                    "questions": [
+                        {
+                            "questionType": "Multiple Choice",
+                            "questionText": "What does CPU stand for?",
+                            "answerOptions": [
+                                "Central Processing Unit",
+                                "Computer Personal Unit",
+                                "Central Power Unit",
+                                "Control Processing Unit"
+                            ],
+                            "correctAnswer": "Central Processing Unit",
+                            "explanation": "CPU stands for Central Processing Unit.",
+                            "points": 1,
+                            "timeLimitSeconds": 30
+                        },
+                        {
+                            "questionType": "Word Bank",
+                            "questionText": "The capital of France is ***1*** and its main language is ***2***.",
+                            "wordBank": [
+                                "Paris",
+                                "French",
+                                "London",
+                                "Spanish"
+                            ],
+                            "correctAnswer": [
+                                "Paris",
+                                "French"
+                            ],
+                            "explanation": "Paris is the capital of France and French is the official language.",
+                            "points": 2,
+                            "timeLimitSeconds": 45
+                        }
+                    ]
+                };
+
+                function toggleTimeLimit() {
+                    var enabled = document.getElementById('timeLimitToggle').checked;
+                    document.getElementById('timeLimitFields').style.display = enabled ? 'flex' : 'none';
+                    if (!enabled) document.getElementById('timeLimitMinutes').value = 0;
+                }
+                function togglePerQ() {
+                    var enabled = document.getElementById('perQToggle').checked;
+                    document.getElementById('perQFields').style.display = enabled ? 'flex' : 'none';
+                }
+                function switchCreateExamQuestionTab(mode) {
+                    var manualTab = document.getElementById('manualQuestionsTab');
+                    var jsonTab = document.getElementById('jsonQuestionsTab');
+                    var manualPanel = document.getElementById('manualExamPanel');
+                    var jsonPanel = document.getElementById('jsonQuestionsPanel');
+                    var textarea = document.getElementById('questionsJsonInput');
+                    var errorDiv = document.getElementById('questionsJsonError');
+                    var banner = document.getElementById('examModeBanner');
+                    var modeInput = document.getElementById('examModeInput');
+                    var submitBtn = document.getElementById('createExamSubmitBtn');
+                    var isJson = mode === 'json';
+
+                    manualTab.classList.toggle('active', !isJson);
+                    jsonTab.classList.toggle('active', isJson);
+                    manualTab.setAttribute('aria-selected', String(!isJson));
+                    jsonTab.setAttribute('aria-selected', String(isJson));
+                    manualPanel.style.display = isJson ? 'none' : 'flex';
+                    jsonPanel.style.display = isJson ? 'flex' : 'none';
+                    textarea.disabled = !isJson;
+                    modeInput.value = isJson ? 'json' : 'manual';
+                    submitBtn.textContent = isJson ? 'Import JSON' : 'Create Exam';
+                    banner.className = 'exam-mode-banner ' + (isJson ? 'json' : 'manual');
+                    banner.textContent = isJson
+                        ? 'JSON Import Mode Selected: Paste a questions-only JSON payload below. Question structures, answer choices, points, and Word Bank items will be parsed independently from Manual Creation.'
+                        : 'Manual Mode Selected: Configure the exam metadata, time limits, and attempt settings below. Questions will be added step-by-step after exam creation.';
+
+                    manualPanel.querySelectorAll('input, select, textarea').forEach(function(field) {
+                        field.disabled = isJson;
+                    });
+
+                    if (!isJson) {
+                        textarea.style.borderColor = '';
+                        errorDiv.style.display = 'none';
+                    }
+                }
+                function showCreateExamToast(message) {
+                    var toast = document.createElement('div');
+                    toast.textContent = message;
+                    toast.style.cssText = 'position:fixed; right:24px; top:24px; background:#0f766e; color:#fff; padding:0.75rem 1rem; border-radius:12px; box-shadow:0 18px 40px rgba(15,118,110,0.24); z-index:9999; font-size:0.9rem; font-weight:700;';
+                    document.body.appendChild(toast);
+                    setTimeout(function() {
+                        toast.remove();
+                    }, 1800);
+                }
+                function copyCreateExamJsonTemplate() {
+                    var text = JSON.stringify(createExamJsonTemplate, null, 2);
+                    var button = document.querySelector('.json-template-btn');
+
+                    function markCopied() {
+                        var previous = button.textContent;
+                        button.textContent = 'Copied!';
+                        showCreateExamToast('Copied!');
+                        setTimeout(function() {
+                            button.textContent = previous;
+                        }, 1800);
+                    }
+
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        navigator.clipboard.writeText(text).then(markCopied).catch(function() {
+                            fallbackCopyCreateExamJsonTemplate(text, markCopied);
+                        });
+                    } else {
+                        fallbackCopyCreateExamJsonTemplate(text, markCopied);
+                    }
+                }
+                function fallbackCopyCreateExamJsonTemplate(text, onCopied) {
+                    var helper = document.createElement('textarea');
+                    helper.value = text;
+                    helper.setAttribute('readonly', '');
+                    helper.style.position = 'absolute';
+                    helper.style.left = '-9999px';
+                    document.body.appendChild(helper);
+                    helper.select();
+                    document.execCommand('copy');
+                    helper.remove();
+                    onCopied();
+                }
+                function validateCreateExamJson() {
+                    var textarea = document.getElementById('questionsJsonInput');
+                    var errorDiv = document.getElementById('questionsJsonError');
+                    var raw = textarea.value.trim();
+                    var validTypes = ['Multiple Choice', 'Word Bank'];
+                    var errors = [];
+
+                    if (textarea.disabled) {
+                        return true;
+                    }
+
+                    textarea.style.borderColor = '';
+                    errorDiv.style.display = 'none';
+                    errorDiv.textContent = 'Invalid JSON format. Please verify your syntax.';
+
+                    if (!raw) {
+                        textarea.style.borderColor = '#dc2626';
+                        errorDiv.textContent = 'Paste a JSON questions payload before importing.';
+                        errorDiv.style.display = 'block';
+                        textarea.focus();
+                        return false;
+                    }
+
+                    try {
+                        var parsed = JSON.parse(raw);
+                        var items;
+                        if (Array.isArray(parsed)) {
+                            items = parsed;
+                        } else if (parsed && Array.isArray(parsed.questions)) {
+                            items = parsed.questions;
+                        } else {
+                            errors.push('JSON payload must be an array of questions or an object with a questions array.');
+                            items = [];
+                        }
+                        for (var i = 0; i < items.length; i++) {
+                            var item = items[i];
+                            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                                errors.push('Item ' + (i + 1) + ': must be a question object');
+                                continue;
+                            }
+                            if (!item.questionType || !item.questionText || item.points === undefined || item.points === null || item.points === '') {
+                                errors.push('Item ' + (i + 1) + ': questionType, questionText, and points are required');
+                                continue;
+                            }
+                            if (validTypes.indexOf(item.questionType) === -1) {
+                                errors.push('Item ' + (i + 1) + ': supported question types are Multiple Choice and Word Bank');
+                                continue;
+                            }
+                            if (item.questionType === 'Multiple Choice' && !Array.isArray(item.answerOptions)) {
+                                errors.push('Item ' + (i + 1) + ': Multiple Choice questions require an answerOptions array');
+                                continue;
+                            }
+                            if (item.questionType === 'Word Bank' && !Array.isArray(item.wordBank)) {
+                                errors.push('Item ' + (i + 1) + ': Word Bank questions require a wordBank array');
+                                continue;
+                            }
+                        }
+                    } catch (e) {
+                        textarea.style.borderColor = '#dc2626';
+                        errorDiv.textContent = 'Invalid JSON format. Please verify your syntax.';
+                        errorDiv.style.display = 'block';
+                        textarea.focus();
+                        return false;
+                    }
+
+                    if (errors.length) {
+                        textarea.style.borderColor = '#dc2626';
+                        errorDiv.textContent = errors[0];
+                        errorDiv.style.display = 'block';
+                        textarea.focus();
+                        return false;
+                    }
+
+                    return true;
+                }
+                </script>
+                <div class="modal-footer-flat">
+                    <button type="button" class="secondary" onclick="document.getElementById('createExamModal').classList.remove('modal-open')">Cancel</button>
+                    <button type="submit" class="primary" id="createExamSubmitBtn">Create Exam</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

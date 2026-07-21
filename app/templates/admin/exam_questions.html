@@ -1,0 +1,315 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Questions — {{ exam.title }} — Classroom Dropbox{% endblock %}
+{% block page_title %}Questions: {{ exam.title }}{% endblock %}
+
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow" style="margin:0 0 0.25rem 0;">Exam code {{ exam.code }}</p>
+        <h1 style="margin:0;">{{ exam.title }}</h1>
+    </div>
+    <div class="row-actions">
+        <a href="{{ url_for('admin_exams.list_exams') }}" class="button secondary small">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back to exams
+        </a>
+        <button class="button small" id="addQuestionBtn" onclick="document.getElementById('addQuestionModal').classList.add('modal-open')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add question
+        </button>
+    </div>
+</div>
+
+{% if questions %}
+<div class="table-wrap panel" style="padding:0;">
+    <table>
+        <thead>
+            <tr>
+                <th style="width:40px;">#</th>
+                <th>Question</th>
+                <th style="width:100px;">Type</th>
+                <th style="width:80px;">Points</th>
+                <th style="width:80px;">Time</th>
+                <th style="width:80px;">Required</th>
+                <th style="width:100px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for question in questions %}
+            <tr>
+                <td>{{ question.sort_order + 1 }}</td>
+                <td>
+                    <strong>{{ question.question }}</strong>
+                    {% if question.correct_answer %}
+                    <br><span class="subtle" style="font-size:0.8rem;">Answer: {{ question.correct_answer }}</span>
+                    {% endif %}
+                    {% if question.explanation %}
+                    <br><span class="subtle" style="font-size:0.8rem;">Explanation: {{ question.explanation }}</span>
+                    {% endif %}
+                </td>
+                <td><span class="badge upcoming">{{ question.type }}</span></td>
+                <td>{{ question.points }}</td>
+                <td>
+                    {% if question.time_limit_seconds %}
+                        {{ question.time_limit_seconds }}s
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>{{ 'Yes' if question.is_required else 'No' }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('admin_exams.delete_question', question_id=question.id) }}" style="display:inline;" onsubmit="return confirm('Delete this question?');">
+                        <button type="submit" class="button small danger-link">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="panel" style="text-align:center; padding:3rem 2rem;">
+    <p class="subtle" style="margin-bottom:0.5rem;">No questions yet.</p>
+    <p class="subtle" style="font-size:0.82rem;">Add questions to this exam to get started.</p>
+</div>
+{% endif %}
+
+<!-- Add Question Modal -->
+<div class="modal-overlay" id="addQuestionModal">
+    <div class="modal-content modal-create" style="max-width:700px;">
+        <div class="modal-create-header">
+            <h2>Add question</h2>
+            <button class="modal-close-btn" onclick="document.getElementById('addQuestionModal').classList.remove('modal-open')" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <!-- Input mode tabs -->
+            <div class="tab-bar" style="display:flex; gap:0; margin-bottom:1.5rem; background:#f1f5f9; border-radius:12px; padding:0.25rem;">
+                <button type="button" class="modal-tab active" id="tabForm" onclick="switchInputMode('form')" style="flex:1; padding:0.6rem 1rem; border:none; border-radius:10px; background:#ffffff; font-weight:600; font-size:0.82rem; cursor:pointer; transition:all 0.15s ease; color:#334155; box-shadow:0 1px 3px rgba(0,0,0,0.06);">Manual Form</button>
+                <button type="button" class="modal-tab" id="tabJson" onclick="switchInputMode('json')" style="flex:1; padding:0.6rem 1rem; border:none; border-radius:10px; background:transparent; font-weight:600; font-size:0.82rem; cursor:pointer; transition:all 0.15s ease; color:#64748b;">Paste JSON</button>
+            </div>
+
+            <!-- Manual Form -->
+            <div id="manualFormPanel">
+                <form method="post" action="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="create-submission-form" id="questionForm">
+                    <input type="hidden" name="input_mode" value="form">
+                    <div class="form-field">
+                        <label>Question type</label>
+                        <select name="type" id="questionTypeSelect" onchange="toggleOptionsField()" required>
+                            <option value="multiple-choice">Multiple Choice</option>
+                            <option value="true-false">True / False</option>
+                            <option value="short-answer">Short Answer</option>
+                            <option value="identification">Identification</option>
+                            <option value="essay">Essay</option>
+                            <option value="word-bank">Word Bank</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label>Question text</label>
+                        <textarea name="question" placeholder="For Word Bank, use ___1___, ___2___, etc. for blanks" rows="3" required></textarea>
+                    </div>
+                    <div class="form-field" id="optionsField">
+                        <label>Answer options <span class="subtle">(one per line)</span></label>
+                        <textarea name="options" placeholder="Option A&#10;Option B&#10;Option C&#10;Option D" rows="4"></textarea>
+                    </div>
+                    <div class="form-field" id="wordBankField" style="display:none;">
+                        <label>Word bank items <span class="subtle">(one per line, including distractors)</span></label>
+                        <textarea name="options" placeholder="Paris&#10;French&#10;London&#10;Spanish" rows="4"></textarea>
+                    </div>
+                    <div class="form-field">
+                        <label>Correct answer</label>
+                        <input type="text" name="correct_answer" placeholder="The correct answer" id="correctAnswerInput">
+                        <span class="subtle" id="correctAnswerHint" style="font-size:0.75rem; margin-top:0.25rem; display:block;">For Word Bank, enter answers as a comma-separated list in blank order (e.g. Paris, French)</span>
+                    </div>
+                    <div class="form-field">
+                        <label>Explanation <span class="subtle">(optional, shown after grading)</span></label>
+                        <textarea name="explanation" placeholder="Explain why this answer is correct" rows="2"></textarea>
+                    </div>
+                    <div class="form-field">
+                        <label>Points</label>
+                        <input type="number" name="points" value="1" min="1" max="100" required>
+                    </div>
+                    <div class="form-field">
+                        <label>Time limit <span class="subtle">(seconds, optional — leave blank for none)</span></label>
+                        <input type="number" name="time_limit_seconds" min="5" max="600" placeholder="e.g. 30">
+                    </div>
+                    <div class="modal-footer-flat">
+                        <button type="button" class="secondary" onclick="document.getElementById('addQuestionModal').classList.remove('modal-open')">Cancel</button>
+                        <button type="submit" class="primary">Add question</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- JSON Panel -->
+            <div id="jsonPanel" style="display:none;">
+                <form method="post" action="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="create-submission-form" id="jsonForm">
+                    <input type="hidden" name="input_mode" value="json">
+                    <div class="form-field">
+                        <label>Paste JSON</label>
+                        <textarea name="json_input" placeholder='[
+    {
+        "questionType": "Multiple Choice",
+        "questionText": "What is the primary function of RAM?",
+        "answerOptions": [
+            "Permanent data storage",
+            "Temporary high-speed storage",
+            "Processing graphic commands",
+            "Managing network connections"
+        ],
+        "correctAnswer": "Temporary high-speed storage",
+        "explanation": "RAM holds data temporarily for quick access by the CPU.",
+        "points": 1
+    },
+    {
+        "questionType": "Word Bank",
+        "questionText": "The capital of France is ___1___ and its primary language is ___2___.",
+        "wordBank": ["Paris", "French", "London", "Spanish"],
+        "correctAnswer": ["Paris", "French"],
+        "explanation": "Paris is the capital and French is the official language.",
+        "points": 2
+    }
+]' rows="15" style="font-family: 'SF Mono', 'Fira Code', monospace; font-size:0.82rem;"></textarea>
+                        <span class="subtle" style="font-size:0.75rem; margin-top:0.25rem; display:block;">
+                            Paste a single question object or an array of question objects. Supported types: Multiple Choice, True/False, Short Answer, Identification, Essay, Word Bank.
+                        </span>
+                        <div id="jsonError" style="display:none; background:#fef2f2; color:#dc2626; border:1px solid #fecaca; border-radius:12px; padding:0.65rem 1rem; font-size:0.85rem; margin-top:0.5rem;"></div>
+                    </div>
+                    <div class="modal-footer-flat">
+                        <button type="button" class="secondary" onclick="document.getElementById('addQuestionModal').classList.remove('modal-open')">Cancel</button>
+                        <button type="button" class="secondary" onclick="validateJsonPreview()" style="min-width:140px;">Validate JSON</button>
+                        <button type="submit" class="primary" id="jsonSubmitBtn">Import questions</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function switchInputMode(mode) {
+    var tabForm = document.getElementById('tabForm');
+    var tabJson = document.getElementById('tabJson');
+    var formPanel = document.getElementById('manualFormPanel');
+    var jsonPanel = document.getElementById('jsonPanel');
+
+    if (mode === 'json') {
+        tabForm.style.background = 'transparent';
+        tabForm.style.color = '#64748b';
+        tabForm.style.boxShadow = 'none';
+        tabJson.style.background = '#ffffff';
+        tabJson.style.color = '#334155';
+        tabJson.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
+        formPanel.style.display = 'none';
+        jsonPanel.style.display = 'block';
+    } else {
+        tabForm.style.background = '#ffffff';
+        tabForm.style.color = '#334155';
+        tabForm.style.boxShadow = '0 1px 3px rgba(0,0,0,0.06)';
+        tabJson.style.background = 'transparent';
+        tabJson.style.color = '#64748b';
+        tabJson.style.boxShadow = 'none';
+        formPanel.style.display = 'block';
+        jsonPanel.style.display = 'none';
+    }
+}
+
+function validateJsonPreview() {
+    var textarea = document.querySelector('[name="json_input"]');
+    var errorDiv = document.getElementById('jsonError');
+    var raw = textarea.value.trim();
+
+    if (!raw) {
+        errorDiv.textContent = 'Please paste JSON content first.';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        var parsed = JSON.parse(raw);
+        var items = Array.isArray(parsed) ? parsed : [parsed];
+        var validTypes = ['Multiple Choice', 'True/False', 'Short Answer', 'Identification', 'Essay', 'Word Bank'];
+        var validCount = 0;
+        var errors = [];
+
+        for (var i = 0; i < items.length; i++) {
+            var item = items[i];
+            if (!item.questionType || validTypes.indexOf(item.questionType) === -1) {
+                errors.push('Item ' + (i + 1) + ': Invalid or missing questionType');
+                continue;
+            }
+            if (!item.questionText || !item.questionText.trim()) {
+                errors.push('Item ' + (i + 1) + ': Missing questionText');
+                continue;
+            }
+            if (item.questionType === 'Word Bank' && (!item.wordBank || !Array.isArray(item.wordBank))) {
+                errors.push('Item ' + (i + 1) + ': Word Bank questions require a wordBank array');
+                continue;
+            }
+            if (item.questionType === 'Multiple Choice' && (!item.answerOptions || !Array.isArray(item.answerOptions))) {
+                errors.push('Item ' + (i + 1) + ': Multiple Choice questions require an answerOptions array');
+                continue;
+            }
+            validCount++;
+        }
+
+        if (errors.length > 0) {
+            errorDiv.innerHTML = '<strong>' + validCount + ' valid, ' + errors.length + ' with issues:</strong><br>' + errors.join('<br>');
+            errorDiv.style.display = 'block';
+        } else {
+            errorDiv.style.background = '#f0fdf4';
+            errorDiv.style.color = '#065f46';
+            errorDiv.style.borderColor = '#bbf7d0';
+            errorDiv.innerHTML = '<strong>✓ JSON is valid!</strong> ' + validCount + ' question(s) ready to import.';
+            errorDiv.style.display = 'block';
+            // Reset styles after 3 seconds
+            setTimeout(function() {
+                errorDiv.style.background = '';
+                errorDiv.style.color = '#dc2626';
+                errorDiv.style.borderColor = '#fecaca';
+            }, 3000);
+        }
+    } catch (e) {
+        errorDiv.textContent = 'Invalid JSON: ' + e.message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+function toggleOptionsField() {
+    var type = document.getElementById('questionTypeSelect').value;
+    var optionsField = document.getElementById('optionsField');
+    var wordBankField = document.getElementById('wordBankField');
+    var correctAnswerInput = document.getElementById('correctAnswerInput');
+    var correctAnswerHint = document.getElementById('correctAnswerHint');
+
+    if (type === 'word-bank') {
+        optionsField.style.display = 'none';
+        wordBankField.style.display = 'block';
+        correctAnswerInput.placeholder = 'Comma-separated correct answers (e.g. Paris, French)';
+        correctAnswerHint.style.display = 'block';
+    } else if (type === 'multiple-choice') {
+        optionsField.style.display = 'block';
+        wordBankField.style.display = 'none';
+        correctAnswerInput.placeholder = 'The correct answer (must match one option exactly)';
+        correctAnswerHint.style.display = 'none';
+    } else if (type === 'true-false') {
+        optionsField.style.display = 'none';
+        wordBankField.style.display = 'none';
+        correctAnswerInput.placeholder = 'True or False';
+        correctAnswerHint.style.display = 'none';
+    } else {
+        optionsField.style.display = 'none';
+        wordBankField.style.display = 'none';
+        correctAnswerInput.placeholder = 'The correct answer';
+        correctAnswerHint.style.display = 'none';
+    }
+}
+document.addEventListener('DOMContentLoaded', toggleOptionsField);
+</script>
+{% endblock %}

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
 
 from app.admin import (
@@ -30,6 +30,60 @@ def get_submission_by_code(code):
         """,
         (code,),
     ).fetchone()
+
+
+@main.route("/api/access-code/verify", methods=["POST"])
+def verify_access_code():
+    """JSON API: checks a code against both submissions and exams tables.
+    Returns { found: bool, type: "submission"|"exam"|null, redirect: str|null, error: str|null }
+    """
+    data = request.get_json(silent=True) or {}
+    code = normalize_code(data.get("code", ""))
+    if not code:
+        return jsonify({"found": False, "type": None, "redirect": None, "error": "Enter the code your teacher gave you."})
+
+    db = get_db()
+
+    # Check submissions table
+    submission = db.execute(
+        "SELECT id, code FROM submissions WHERE code = ?", (code,)
+    ).fetchone()
+    if submission:
+        return jsonify({
+            "found": True,
+            "type": "submission",
+            "redirect": url_for("main.student_submission", code=code),
+        })
+
+    # Check exams table (only active)
+    exam = db.execute(
+        "SELECT id, code, status FROM exams WHERE code = ? AND status = 'active'", (code,)
+    ).fetchone()
+    if exam:
+        return jsonify({
+            "found": True,
+            "type": "exam",
+            "redirect": url_for("exams.take_exam", code=code),
+        })
+
+    # Check exams that exist but are not active
+    inactive_exam = db.execute(
+        "SELECT id, status FROM exams WHERE code = ?", (code,)
+    ).fetchone()
+    if inactive_exam:
+        return jsonify({
+            "found": False,
+            "type": None,
+            "redirect": None,
+            "error": "That exam is not currently active.",
+        })
+
+    return jsonify({
+        "found": False,
+        "type": None,
+        "redirect": None,
+        "error": "Invalid or expired code. Please check and try again.",
+    })
 
 
 def allowed_extensions(value):
