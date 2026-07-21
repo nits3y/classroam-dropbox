@@ -87,9 +87,17 @@
         </div>
     </div>
 
+    <!-- Per-question timer (shown only if any question has time_limit_seconds) -->
+    {% set has_per_q_timers = questions | selectattr('time_limit_seconds', 'ne', None) | list | length > 0 %}
+    {% if has_per_q_timers %}
+    <div class="exam-per-q-timer" id="perQTimer" style="display:none; text-align:center; padding:0.5rem; background:#0f6e56; color:#fff; font-weight:600; font-size:0.9rem;">
+        Time remaining for this question: <span id="perQTimerValue">--</span>
+    </div>
+    {% endif %}
+
     <form id="examForm" method="post" class="card exam-form" style="max-width: 720px; margin: 1.5rem auto;">
         {% for question in questions %}
-        <div class="form-section exam-question" data-question-id="{{ question.id }}">
+        <div class="form-section exam-question" data-question-id="{{ question.id }}"{% if question.time_limit_seconds %} data-q-time-limit="{{ question.time_limit_seconds }}"{% endif %}>
             <div class="section-heading">
                 <label>{{ loop.index }}. {{ question.question }}
                     {% if question.is_required %}<span style="color:#dc2626;">*</span>{% endif %}
@@ -106,6 +114,14 @@
                         {{ opt }}
                     </label>
                     {% endfor %}
+                </div>
+            {% elif question.type == 'word-bank' %}
+                {% set bank = (question.options | from_json) if question.options else [] %}
+                <div class="word-bank-question" data-qid="{{ question.id }}" data-bank='{{ question.options | tojson if question.options else "[]" }}'>
+                    <div class="word-bank-text" id="wbText_{{ question.id }}">{{ question.question }}</div>
+                    <div class="word-bank-chips" id="wbChips_{{ question.id }}"></div>
+                    <input type="hidden" name="question_{{ question.id }}" id="wbInput_{{ question.id }}" value="">
+                    <div class="word-bank-status" id="wbStatus_{{ question.id }}">Loading word bank...</div>
                 </div>
             {% elif question.type == 'essay' %}
                 <textarea name="question_{{ question.id }}" rows="6" placeholder="Write your answer..." {% if question.is_required %}required{% endif %}></textarea>
@@ -208,6 +224,147 @@
         timerHandle = setInterval(tick, 1000);
     });
 })();
+
+// ── Word Bank interactive helper ──────────────────────────────────
+(function () {
+    var activeBlank = null; // { qid, index }
+
+    // Initialize all word bank questions
+    document.querySelectorAll('.word-bank-question').forEach(function (container) {
+        var qid = container.getAttribute('data-qid');
+        var rawText = container.querySelector('.word-bank-text').textContent;
+        var bank;
+        try {
+            bank = JSON.parse(container.getAttribute('data-bank') || '[]');
+        } catch (e) {
+            bank = [];
+        }
+
+        if (!bank.length) {
+            container.querySelector('.word-bank-status').textContent = 'No word bank items available.';
+            return;
+        }
+
+        // Find all blanks ___N___ or ***N*** in the text
+        var blankRegex = /(?:___|\*\*\*)(\d+)(?:___|\*\*\*)/g;
+        var match;
+        var blanks = [];
+        var blankSet = new Set();
+        while ((match = blankRegex.exec(rawText)) !== null) {
+            var idx = parseInt(match[1], 10);
+            if (!blankSet.has(idx)) {
+                blankSet.add(idx);
+                blanks.push(idx);
+            }
+        }
+        blanks.sort(function (a, b) { return a - b; });
+
+        // Replace blanks with clickable spans
+        var rendered = rawText;
+        var answers = {};
+        blanks.forEach(function (i) {
+            var slotId = 'slot_' + qid + '_' + i;
+            var replacement = '<span class="wb-blank" id="' + slotId + '" data-qid="' + qid + '" data-idx="' + i + '" onclick="window._wbClickBlank(' + qid + ', ' + i + ')">[' + i + ']</span>';
+            rendered = rendered.replace(new RegExp('(?:___|\\*\\*\\*)' + i + '(?:___|\\*\\*\\*)'), replacement);
+        });
+        container.querySelector('.word-bank-text').innerHTML = rendered;
+
+        // Render word bank chips
+        var chipsContainer = container.querySelector('.word-bank-chips');
+        bank.forEach(function (word) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'wb-chip';
+            btn.textContent = word;
+            btn.setAttribute('data-word', word);
+            btn.setAttribute('data-qid', qid);
+            btn.addEventListener('click', function () {
+                window._wbSelectWord(qid, word, this);
+            });
+            chipsContainer.appendChild(btn);
+        });
+
+        // Update status
+        var statusEl = container.querySelector('.word-bank-status');
+        var totalBlanks = blanks.length;
+        statusEl.textContent = 'Click a blank [' + (answers ? Object.keys(answers).length : 0) + '/' + totalBlanks + ' filled] then click a word.';
+
+        // Store blanks metadata on container
+        container._wbBlanks = blanks;
+        container._wbAnswers = answers;
+
+        // Update hidden input and status helper
+        container._wbUpdate = function () {
+            var ordered = blanks.map(function (i) { return answers[i] || ''; });
+            var input = document.getElementById('wbInput_' + qid);
+            input.value = JSON.stringify(ordered);
+            var filled = ordered.filter(function (v) { return v !== ''; }).length;
+            statusEl.textContent = 'Click a blank [' + filled + '/' + totalBlanks + ' filled] then click a word.';
+            if (filled === totalBlanks) {
+                statusEl.style.color = '#059669';
+                statusEl.textContent = '✓ All blanks filled!';
+            } else {
+                statusEl.style.color = '#64748b';
+            }
+        };
+        container._wbUpdate();
+    });
+})();
+
+// Global handlers for word bank interactions
+window._wbClickBlank = function (qid, idx) {
+    activeBlank = { qid: qid, idx: idx };
+    // Highlight the selected blank
+    document.querySelectorAll('.wb-blank').forEach(function (el) {
+        el.classList.remove('wb-blank-active');
+    });
+    var slot = document.getElementById('slot_' + qid + '_' + idx);
+    if (slot) slot.classList.add('wb-blank-active');
+};
+
+window._wbSelectWord = function (qid, word, btn) {
+    if (!activeBlank || activeBlank.qid !== qid) {
+        // No blank selected for this question — show a quick tip
+        var statusEl = document.getElementById('wbStatus_' + qid);
+        statusEl.style.color = '#b45309';
+        statusEl.textContent = 'First click a blank ([' + (document.querySelectorAll('#wbText_' + qid + ' .wb-blank').length) + ' available), then click a word.';
+        setTimeout(function () { statusEl.style.color = '#64748b'; }, 2000);
+        return;
+    }
+
+    var container = document.querySelector('.word-bank-question[data-qid="' + qid + '"]');
+    if (!container || !container._wbAnswers) return;
+
+    var idx = activeBlank.idx;
+
+    // If this word is already used in another blank for this question, remove it
+    Object.keys(container._wbAnswers).forEach(function (key) {
+        if (container._wbAnswers[key] === word) {
+            var prevSlot = document.getElementById('slot_' + qid + '_' + key);
+            if (prevSlot) {
+                prevSlot.textContent = '[' + key + ']';
+                prevSlot.classList.remove('wb-blank-filled');
+            }
+            delete container._wbAnswers[key];
+        }
+    });
+
+    // Fill the active blank
+    container._wbAnswers[idx] = word;
+    var slot = document.getElementById('slot_' + qid + '_' + idx);
+    if (slot) {
+        slot.textContent = word;
+        slot.classList.add('wb-blank-filled');
+        slot.classList.remove('wb-blank-active');
+    }
+
+    // Disable the selected chip
+    btn.classList.add('wb-chip-used');
+    btn.disabled = true;
+
+    container._wbUpdate();
+    activeBlank = null;
+};
 </script>
 {% endif %}
 {% endblock %}

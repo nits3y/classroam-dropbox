@@ -32,6 +32,7 @@ QUESTION_TYPES = {
     "short-answer",
     "identification",
     "essay",
+    "word-bank",
 }
 
 
@@ -67,6 +68,19 @@ def generate_exam_code():
             return code
 
 
+def get_default_exam_class_id():
+    db = get_db()
+    existing = db.execute("SELECT id FROM classes ORDER BY id LIMIT 1").fetchone()
+    if existing:
+        return existing["id"]
+    cursor = db.execute(
+        "INSERT INTO classes (name, default_allowed_file_types) VALUES (?, ?)",
+        ("General", "any"),
+    )
+    db.commit()
+    return cursor.lastrowid
+
+
 def dump_answers(answers_dict):
     return json.dumps(answers_dict or {})
 
@@ -89,6 +103,130 @@ def load_options(options_text):
         return json.loads(options_text)
     except (TypeError, ValueError):
         return []
+
+
+def extract_import_questions_payload(parsed):
+    if isinstance(parsed, list):
+        return parsed, None
+
+    if isinstance(parsed, dict):
+        questions_payload = parsed.get("questions")
+        if isinstance(questions_payload, list):
+            return questions_payload, None
+        return None, "JSON payload must include a questions array."
+
+    return None, "JSON payload must be an array of questions or an object with a questions array."
+
+
+def normalize_imported_questions(parsed):
+    questions_payload, payload_error = extract_import_questions_payload(parsed)
+    if payload_error:
+        return [], [payload_error]
+
+    items = questions_payload if isinstance(questions_payload, list) else [questions_payload]
+    type_map = {
+        "Multiple Choice": "multiple-choice",
+        "True/False": "true-false",
+        "Short Answer": "short-answer",
+        "Identification": "identification",
+        "Essay": "essay",
+        "Word Bank": "word-bank",
+    }
+    normalized = []
+    errors = []
+
+    for index, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            errors.append(f"Item {index}: must be a question object")
+            continue
+
+        missing = [
+            field
+            for field in ("questionType", "questionText", "points")
+            if item.get(field) in (None, "")
+        ]
+        if missing:
+            errors.append(f"Item {index}: missing {', '.join(missing)}")
+            continue
+
+        q_type_raw = (item.get("questionType") or "").strip()
+        q_type = type_map.get(q_type_raw)
+        if not q_type or q_type not in QUESTION_TYPES:
+            errors.append(f"Item {index}: invalid questionType '{q_type_raw}'")
+            continue
+
+        question_text = (item.get("questionText") or "").strip()
+        if not question_text:
+            errors.append(f"Item {index}: missing questionText")
+            continue
+
+        try:
+            points = int(item.get("points"))
+        except (TypeError, ValueError):
+            errors.append(f"Item {index}: points must be a number")
+            continue
+
+        if q_type == "word-bank":
+            options_list = item.get("wordBank")
+            correct_answers = item.get("correctAnswer")
+            if not isinstance(options_list, list):
+                errors.append(f"Item {index}: Word Bank questions require a wordBank array")
+                continue
+            if not isinstance(correct_answers, list) or not correct_answers:
+                errors.append(f"Item {index}: Word Bank questions require a non-empty correctAnswer array")
+                continue
+            correct_answer = json.dumps(correct_answers)
+        elif q_type == "multiple-choice":
+            options_list = item.get("answerOptions")
+            if not isinstance(options_list, list):
+                errors.append(f"Item {index}: Multiple Choice questions require an answerOptions array")
+                continue
+            correct_answer = (item.get("correctAnswer") or "").strip()
+            if not correct_answer:
+                errors.append(f"Item {index}: Multiple Choice questions require a non-empty correctAnswer")
+                continue
+        else:
+            options_list = None
+            correct_answer = (item.get("correctAnswer") or "").strip()
+
+        time_limit_seconds = item.get("timeLimitSeconds")
+        if time_limit_seconds is not None:
+            try:
+                time_limit_seconds = int(time_limit_seconds)
+            except (TypeError, ValueError):
+                errors.append(f"Item {index}: timeLimitSeconds must be a number")
+                continue
+
+        normalized.append({
+            "question": question_text,
+            "q_type": q_type,
+            "options": options_list,
+            "correct_answer": correct_answer,
+            "points": points,
+            "explanation": (item.get("explanation") or "").strip(),
+            "time_limit_seconds": time_limit_seconds,
+        })
+
+    return normalized, errors
+
+
+def import_questions_for_exam(exam_id, parsed, starting_sort_order=0):
+    questions, errors = normalize_imported_questions(parsed)
+    sort_order = starting_sort_order
+    for question in questions:
+        ExamStore.create_question(
+            exam_id=exam_id,
+            question=question["question"],
+            q_type=question["q_type"],
+            options=question["options"],
+            correct_answer=question["correct_answer"],
+            points=question["points"],
+            explanation=question["explanation"],
+            sort_order=sort_order,
+            time_limit_seconds=question["time_limit_seconds"],
+        )
+        sort_order += 1
+    return len(questions), errors
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +266,8 @@ class ExamStore:
 
     @staticmethod
     def create_exam(class_id, title, description="", instructions="",
-                     time_limit_seconds=1800, max_attempts=1, status="draft"):
+                     time_limit_seconds=1800, time_limit_enabled=True,
+                     max_attempts=1, status="draft"):
         db = get_db()
         code = generate_exam_code()
         now = now_local().isoformat(timespec="seconds")
@@ -136,11 +275,11 @@ class ExamStore:
             """
             INSERT INTO exams
                 (class_id, title, description, instructions, time_limit_seconds,
-                 code, status, max_attempts, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 time_limit_enabled, code, status, max_attempts, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (class_id, title, description, instructions, time_limit_seconds,
-             code, status, max_attempts, now, now),
+             int(bool(time_limit_enabled)), code, status, max_attempts, now, now),
         )
         db.commit()
         return ExamStore.get_exam(cursor.lastrowid)
@@ -181,7 +320,8 @@ class ExamStore:
 
     @staticmethod
     def create_question(exam_id, question, q_type, options=None, correct_answer=None,
-                         points=1, explanation="", is_required=True, sort_order=0):
+                         points=1, explanation="", is_required=True, sort_order=0,
+                         time_limit_seconds=None):
         if q_type not in QUESTION_TYPES:
             raise ValueError(f"Unknown question type: {q_type}")
         db = get_db()
@@ -190,11 +330,12 @@ class ExamStore:
             """
             INSERT INTO exam_questions
                 (exam_id, question, type, options, correct_answer, explanation,
-                 points, is_required, sort_order, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 points, is_required, sort_order, time_limit_seconds, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (exam_id, question, q_type, dump_options(options), correct_answer,
-             explanation, points, int(bool(is_required)), sort_order, now, now),
+             explanation, points, int(bool(is_required)), sort_order,
+             time_limit_seconds, now, now),
         )
         db.commit()
         return ExamStore.get_question(cursor.lastrowid)
@@ -304,10 +445,21 @@ class ExamStore:
             if question["type"] == "essay":
                 needs_manual_grading = True
                 continue
-            given = (answers.get(str(question["id"])) or "").strip().lower()
-            correct = (question["correct_answer"] or "").strip().lower()
-            if correct and given == correct:
-                score += question["points"]
+            if question["type"] == "word-bank":
+                try:
+                    given_list = json.loads((answers.get(str(question["id"])) or "[]"))
+                    correct_list = json.loads((question["correct_answer"] or "[]"))
+                    if len(given_list) == len(correct_list) and all(
+                        g.strip().lower() == c.strip().lower() for g, c in zip(given_list, correct_list)
+                    ):
+                        score += question["points"]
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
+            else:
+                given = (answers.get(str(question["id"])) or "").strip().lower()
+                correct = (question["correct_answer"] or "").strip().lower()
+                if correct and given == correct:
+                    score += question["points"]
 
         db = get_db()
         now = now_local().isoformat(timespec="seconds")
@@ -461,21 +613,93 @@ def list_exams():
 @admin_exams_bp.route("/new", methods=["POST"])
 @teacher_required
 def create_exam():
-    class_id = request.form.get("class_id", type=int)
-    title = request.form.get("title", "").strip()
-    minutes = request.form.get("time_limit_minutes", type=int) or 30
-    if not class_id or not title:
-        flash("Pick a class and enter a title.", "error")
+    exam_mode = request.form.get("exam_mode", "manual")
+    json_raw = request.form.get("questions_json", "").strip()
+    parsed_questions = None
+    json_payload = None
+    class_id = get_default_exam_class_id()
+
+    if exam_mode == "json":
+        if not json_raw:
+            flash("Paste JSON questions before importing.", "error")
+            return redirect(url_for("admin_exams.list_exams"))
+        try:
+            json_payload = json.loads(json_raw)
+        except json.JSONDecodeError:
+            flash("Invalid JSON format. Please verify your syntax.", "error")
+            return redirect(url_for("admin_exams.list_exams"))
+
+        questions_payload, payload_error = extract_import_questions_payload(json_payload)
+        if payload_error:
+            flash(payload_error, "error")
+            return redirect(url_for("admin_exams.list_exams"))
+
+        title = request.form.get("json_title", "").strip() or f"Imported Exam {now_local().strftime('%Y-%m-%d %H:%M')}"
+        description = request.form.get("json_description", "").strip()
+        instructions = request.form.get("json_instructions", "").strip()
+        time_limit_enabled = True
+        minutes = 30
+        per_q_enabled = False
+        per_q_seconds = 30
+        max_attempts = 1
+
+        normalized_questions, import_errors = normalize_imported_questions(questions_payload)
+        if import_errors:
+            flash(import_errors[0], "error")
+            return redirect(url_for("admin_exams.list_exams"))
+        parsed_questions = normalized_questions
+    else:
+        title = request.form.get("title", "").strip()
+        description = request.form.get("description", "").strip()
+        instructions = request.form.get("instructions", "").strip()
+        time_limit_enabled = request.form.get("time_limit_enabled") == "1"
+        minutes = request.form.get("time_limit_minutes", type=int) or 30
+        per_q_enabled = request.form.get("per_question_time_enabled") == "1"
+        per_q_seconds = request.form.get("per_question_time_seconds", type=int) or 30
+        max_attempts = request.form.get("max_attempts", type=int) or 1
+
+    if not title:
+        flash("Enter an exam title.", "error")
         return redirect(url_for("admin_exams.list_exams"))
+
+    time_limit_seconds = minutes * 60 if time_limit_enabled else 0
 
     exam = ExamStore.create_exam(
         class_id=class_id,
         title=title,
-        description=request.form.get("description", "").strip(),
-        instructions=request.form.get("instructions", "").strip(),
-        time_limit_seconds=minutes * 60,
-        max_attempts=request.form.get("max_attempts", type=int) or 1,
+        description=description,
+        instructions=instructions,
+        time_limit_seconds=time_limit_seconds,
+        time_limit_enabled=time_limit_enabled,
+        max_attempts=max_attempts,
     )
+
+    imported = 0
+    if parsed_questions:
+        for sort_order, question in enumerate(parsed_questions):
+            ExamStore.create_question(
+                exam_id=exam["id"],
+                question=question["question"],
+                q_type=question["q_type"],
+                options=question["options"],
+                correct_answer=question["correct_answer"],
+                points=question["points"],
+                explanation=question["explanation"],
+                sort_order=sort_order,
+                time_limit_seconds=question["time_limit_seconds"],
+            )
+            imported += 1
+        flash(f"Created exam with {imported} imported question(s).", "success")
+
+    # If per-question time is enabled, set a default on all existing questions
+    if per_q_enabled and per_q_seconds:
+        db = get_db()
+        db.execute(
+            "UPDATE exam_questions SET time_limit_seconds = ? WHERE exam_id = ? AND time_limit_seconds IS NULL",
+            (per_q_seconds, exam["id"]),
+        )
+        db.commit()
+
     return redirect(url_for("admin_exams.manage_questions", exam_id=exam["id"]))
 
 
@@ -487,10 +711,37 @@ def manage_questions(exam_id):
         abort(404)
 
     if request.method == "POST":
+        # Check if this is a JSON import
+        input_mode = request.form.get("input_mode", "form")
+
+        if input_mode == "json":
+            json_raw = request.form.get("json_input", "").strip()
+            if not json_raw:
+                flash("Paste JSON content before submitting.", "error")
+                return redirect(url_for("admin_exams.manage_questions", exam_id=exam_id))
+            try:
+                parsed = json.loads(json_raw)
+            except json.JSONDecodeError as e:
+                flash(f"Invalid JSON: {e}", "error")
+                return redirect(url_for("admin_exams.manage_questions", exam_id=exam_id))
+
+            sort_order = len(ExamStore.get_questions(exam_id))
+            imported, errors = import_questions_for_exam(exam_id, parsed, sort_order)
+            for error in errors:
+                flash(error, "error")
+
+            if imported == 1:
+                flash("Imported 1 question from JSON.", "success")
+            else:
+                flash(f"Imported {imported} questions from JSON.", "success")
+            return redirect(url_for("admin_exams.manage_questions", exam_id=exam_id))
+
+        # Manual form submission
         q_type = request.form.get("type", "multiple-choice")
         options = [
             opt.strip() for opt in request.form.getlist("options") if opt.strip()
         ] if q_type == "multiple-choice" else None
+        time_limit_seconds = request.form.get("time_limit_seconds", type=int)
         ExamStore.create_question(
             exam_id=exam_id,
             question=request.form.get("question", "").strip(),
@@ -500,6 +751,7 @@ def manage_questions(exam_id):
             points=request.form.get("points", type=int) or 1,
             explanation=request.form.get("explanation", "").strip(),
             sort_order=len(ExamStore.get_questions(exam_id)),
+            time_limit_seconds=time_limit_seconds,
         )
         return redirect(url_for("admin_exams.manage_questions", exam_id=exam_id))
 

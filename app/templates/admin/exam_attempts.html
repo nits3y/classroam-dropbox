@@ -1,0 +1,124 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Attempts — {{ exam.title }} — Classroom Dropbox{% endblock %}
+{% block page_title %}Attempts: {{ exam.title }}{% endblock %}
+
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow" style="margin:0 0 0.25rem 0;">Exam code {{ exam.code }}</p>
+        <h1 style="margin:0;">{{ exam.title }}</h1>
+    </div>
+    <a href="{{ url_for('admin_exams.list_exams') }}" class="button secondary small">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back to exams
+    </a>
+</div>
+
+{% if attempts %}
+<div class="table-wrap panel" style="padding:0;">
+    <table>
+        <thead>
+            <tr>
+                <th>Student</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Warnings</th>
+                <th>Started</th>
+                <th>Submitted</th>
+                <th>Auto</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for attempt in attempts %}
+            <tr>
+                <td><strong>{{ attempt.last_name }}, {{ attempt.first_name }}</strong></td>
+                <td>
+                    <span class="badge {% if attempt.status == 'graded' %}ongoing{% elif attempt.status == 'submitted' %}due-soon{% else %}upcoming{% endif %}">
+                        {{ attempt.status }}
+                    </span>
+                </td>
+                <td>
+                    {% if attempt.score is not none %}
+                        {{ attempt.score }}{% if attempt.total_points %} / {{ attempt.total_points }}{% endif %}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% if attempt.security_warnings > 0 %}
+                    <span style="color: {{ '#dc2626' if attempt.security_warnings >= 3 else '#b45309' }};">
+                        {{ attempt.security_warnings }}
+                    </span>
+                    {% else %}
+                    0
+                    {% endif %}
+                </td>
+                <td class="col-submitted">{{ attempt.started_at }}</td>
+                <td class="col-submitted">{{ attempt.submitted_at or '—' }}</td>
+                <td>{{ 'Yes' if attempt.is_auto_submitted else 'No' }}</td>
+                <td>
+                    <div class="row-actions" style="gap:0.35rem;">
+                        <button class="button small secondary" onclick="viewAttemptAnswers({{ attempt.id }})">View answers</button>
+                        {% if attempt.status in ('submitted', 'in-progress') %}
+                        <form method="post" action="{{ url_for('admin_exams.grade_attempt', attempt_id=attempt.id) }}" style="display:inline-flex; gap:0.35rem; align-items:center;">
+                            <input type="number" name="score" step="0.5" min="0" max="{{ attempt.total_points or 100 }}" placeholder="Score" style="width:70px; padding:0.3rem 0.5rem; border:1.5px solid #e2e8f0; border-radius:8px; font-size:0.82rem; margin:0;" required>
+                            <button type="submit" class="button small">Grade</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="panel" style="text-align:center; padding:3rem 2rem;">
+    <p class="subtle" style="margin-bottom:0.5rem;">No attempts yet.</p>
+    <p class="subtle" style="font-size:0.82rem;">Students have not taken this exam yet.</p>
+</div>
+{% endif %}
+
+<!-- View Answers Modal -->
+<div class="modal-overlay" id="answersModal">
+    <div class="modal-content modal-create" style="max-width:640px;">
+        <div class="modal-create-header">
+            <h2>Student answers</h2>
+            <button class="modal-close-btn" onclick="document.getElementById('answersModal').classList.remove('modal-open')" aria-label="Close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body" id="answersModalBody">
+            <div style="text-align:center; padding:2rem; color:#94a3b8;">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+var attemptsData = {{ attempts | map(attribute='id') | list | tojson }};
+
+function viewAttemptAnswers(attemptId) {
+    var modal = document.getElementById('answersModal');
+    var body = document.getElementById('answersModalBody');
+    body.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">Loading...</div>';
+    modal.classList.add('modal-open');
+
+    fetch('{{ url_for("admin_exams.view_attempts", exam_id=0) }}'.replace('0', {{ exam.id }}), {
+        headers: { 'Accept': 'application/json' }
+    })
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+        // We'll use an API endpoint instead
+        location.href = '{{ url_for("admin_exams.view_attempts", exam_id=0) }}'.replace('0', {{ exam.id }});
+    })
+    .catch(function(err) {
+        body.innerHTML = '<div style="text-align:center; padding:2rem; color:#dc2626;">Failed to load answers.</div>';
+    });
+}
+</script>
+{% endblock %}
