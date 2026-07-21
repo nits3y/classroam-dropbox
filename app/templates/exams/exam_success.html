@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Submitted — {{ exam.title }} — Classroom Dropbox{% endblock %}
+
+{% block content %}
+<div class="card student-card" style="text-align: center;">
+    <div class="success-check">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+        </svg>
+    </div>
+    <h1>Exam submitted!</h1>
+    <p class="subtle" style="margin-bottom: 0.5rem;">Your answers for <strong>{{ exam.title }}</strong> were recorded.</p>
+    <p class="subtle" style="font-size: 0.82rem; color: #94a3b8;">You can close this page now.</p>
+    <a class="button student-button" href="{{ url_for('main.code_entry') }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 6px;">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back to code entry
+    </a>
+</div>
+{% endblock %}
