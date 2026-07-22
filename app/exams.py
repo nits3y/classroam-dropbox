@@ -214,13 +214,15 @@ def normalize_imported_questions(parsed):
             if not isinstance(options_list, list):
                 errors.append(f"Item {index}: Multiple Choice questions require an answerOptions array")
                 continue
-            correct_answer = (item.get("correctAnswer") or "").strip()
+            raw_correct_answer = item.get("correctAnswer")
+            correct_answer = str(raw_correct_answer).strip() if raw_correct_answer is not None else ""
             if not correct_answer:
                 errors.append(f"Item {index}: Multiple Choice questions require a non-empty correctAnswer")
                 continue
         else:
             options_list = None
-            correct_answer = (item.get("correctAnswer") or "").strip()
+            raw_correct_answer = item.get("correctAnswer")
+            correct_answer = str(raw_correct_answer).strip() if raw_correct_answer is not None else ""
 
         time_limit_seconds = item.get("timeLimitSeconds")
         if time_limit_seconds is not None:
@@ -1041,6 +1043,64 @@ def view_attempts(exam_id):
     if request.headers.get("Accept") == "application/json":
         return {"exam_id": exam_id, "attempts": [serialize_attempt(attempt) for attempt in attempts]}
     return render_template("admin/exam_attempts.html", exam=exam, attempts=attempts)
+
+
+@admin_exams_bp.route("/attempts/<int:attempt_id>/answers")
+@teacher_required
+def view_attempt_answers(attempt_id):
+    attempt = ExamStore.get_attempt(attempt_id)
+    if attempt is None:
+        abort(404)
+
+    answers = load_answers(attempt["answers"])
+    breakdown = []
+    for question in ExamStore.get_questions(attempt["exam_id"]):
+        raw_answer = answers.get(str(question["id"]))
+        answer = raw_answer
+        correct = None
+        earned_points = 0
+
+        if question["type"] == "essay":
+            result = "manual"
+        elif question["type"] == "word-bank":
+            try:
+                given_list = json.loads(raw_answer or "[]")
+                correct_list = json.loads(question["correct_answer"] or "[]")
+                answer = given_list if isinstance(given_list, list) else raw_answer
+                correct = correct_list if isinstance(correct_list, list) else question["correct_answer"]
+                is_correct = len(given_list) == len(correct_list) and all(
+                    str(given).strip().lower() == str(expected).strip().lower()
+                    for given, expected in zip(given_list, correct_list)
+                )
+            except (json.JSONDecodeError, TypeError):
+                is_correct = False
+            result = "correct" if is_correct else "incorrect"
+            earned_points = question["points"] if is_correct else 0
+        else:
+            answer = raw_answer or ""
+            correct = question["correct_answer"] or ""
+            is_correct = bool(correct) and answer.strip().lower() == correct.strip().lower()
+            result = "correct" if is_correct else "incorrect"
+            earned_points = question["points"] if is_correct else 0
+
+        breakdown.append({
+            "question": question["question"],
+            "type": question["type"],
+            "answer": answer,
+            "correct_answer": correct,
+            "points": question["points"],
+            "earned_points": earned_points,
+            "result": result,
+            "explanation": question["explanation"] or "",
+        })
+
+    return {
+        "attempt_id": attempt_id,
+        "student": f"{attempt['last_name']}, {attempt['first_name']}",
+        "score": attempt["score"],
+        "total_points": attempt["total_points"],
+        "questions": breakdown,
+    }
 
 
 @admin_exams_bp.route("/<int:exam_id>/attempts/live")

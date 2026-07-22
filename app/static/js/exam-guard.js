@@ -5,7 +5,6 @@
     if (!card) return;
 
     var examCode = card.dataset.examCode;
-    var timeLimitSeconds = parseInt(card.dataset.timeLimit, 10) || 0;
 
     var form = document.getElementById("examAnswerForm");
     var questionSlides = document.getElementById("questionSlides");
@@ -18,9 +17,9 @@
     var warningCountEl = document.getElementById("warningCount");
     var maxWarningsEl = document.querySelector("[data-max-warnings]");
     var maxWarnings = maxWarningsEl ? parseInt(maxWarningsEl.dataset.maxWarnings, 10) || 3 : 3;
-    var timerEl = document.getElementById("examTimer");
     var questionTimerRow = document.getElementById("questionTimerRow");
     var questionTimerEl = document.getElementById("questionTimer");
+    var nextQuestionBtnLabel = document.getElementById("nextQuestionBtnLabel");
     var gate = document.getElementById("fullscreenGate");
     var enterFullscreenBtn = document.getElementById("enterFullscreenBtn");
     var lockedOverlay = document.getElementById("examLockedOverlay");
@@ -46,6 +45,15 @@
     // One-question-per-view navigation
     // ------------------------------------------------------------------
 
+    function isSlideAnswered(slideEl) {
+        if (!slideEl) return false;
+        var checked = slideEl.querySelector('input[type="radio"]:checked, input[type="checkbox"]:checked');
+        if (checked) return true;
+        return Array.prototype.some.call(slideEl.querySelectorAll("input[type='text'], input[type='number'], textarea"), function (field) {
+            return field.value.trim() !== "";
+        });
+    }
+
     function showSlide(index) {
         if (submitted) return;
         slides.forEach(function (slide, i) {
@@ -57,6 +65,7 @@
         if (prevBtn) prevBtn.disabled = index === 0;
         var isLast = index === slides.length - 1;
         if (nextBtn) nextBtn.style.display = isLast ? "none" : "";
+        if (nextQuestionBtnLabel) nextQuestionBtnLabel.textContent = isSlideAnswered(slides[index]) ? "Next" : "Skip";
         if (submitBtn) submitBtn.style.display = isLast ? "" : "none";
         currentIndex = index;
         // Only run the per-question countdown once the student is actually
@@ -67,7 +76,6 @@
 
     // ------------------------------------------------------------------
     // Per-question countdown (app/exams.py exam_questions.time_limit_seconds).
-    // Independent of, and runs alongside, the overall exam timer below.
     // Advances to the next question automatically on expiry; this is a
     // normal pacing event, not a security violation, so it never calls
     // flagWarning().
@@ -93,11 +101,16 @@
             return;
         }
         if (questionTimerRow) questionTimerRow.style.display = "";
+        if (questionTimerRow) questionTimerRow.className = "question-timer question-timer-normal";
         questionDeadlineMs = Date.now() + limit * 1000;
 
         function tickQuestionTimer() {
             var remaining = Math.ceil((questionDeadlineMs - Date.now()) / 1000);
             if (questionTimerEl) questionTimerEl.textContent = formatTime(remaining);
+            if (questionTimerRow) {
+                var urgency = remaining <= 10 || remaining <= limit * 0.25 ? "question-timer-urgent" : remaining <= limit * 0.5 ? "question-timer-warning" : "question-timer-normal";
+                questionTimerRow.className = "question-timer " + urgency;
+            }
             if (remaining <= 0) {
                 stopQuestionTimer();
                 if (submitted) return;
@@ -121,6 +134,18 @@
             showSlide(currentIndex + 1);
         });
     }
+    if (questionSlides) {
+        questionSlides.addEventListener("input", function (event) {
+            if (event.target.matches("input[type='text'], input[type='number'], textarea")) {
+                if (nextQuestionBtnLabel) nextQuestionBtnLabel.textContent = isSlideAnswered(slides[currentIndex]) ? "Next" : "Skip";
+            }
+        });
+        questionSlides.addEventListener("change", function (event) {
+            if (event.target.matches("input[type='radio'], input[type='checkbox']")) {
+                if (nextQuestionBtnLabel) nextQuestionBtnLabel.textContent = isSlideAnswered(slides[currentIndex]) ? "Next" : "Skip";
+            }
+        });
+    }
     if (prevBtn) {
         prevBtn.addEventListener("click", function () {
             if (submitted || currentIndex <= 0) return;
@@ -131,36 +156,10 @@
     if (slides.length > 0) showSlide(0);
     if (!isFullscreen()) showGate();
 
-    // ------------------------------------------------------------------
-    // Countdown timer (overall exam timer)
-    // ------------------------------------------------------------------
-
-    var timerHandle = null;
-    var examDeadlineMs = null;
-
     function formatTime(totalSeconds) {
         var m = Math.max(0, Math.floor(totalSeconds / 60));
         var s = Math.max(0, Math.floor(totalSeconds % 60));
         return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s;
-    }
-
-    function startExamTimer() {
-        if (timeLimitSeconds <= 0 || !timerEl || timerHandle) return;
-        examDeadlineMs = Date.now() + timeLimitSeconds * 1000;
-
-        function tickExamTimer() {
-            var remainingSeconds = Math.ceil((examDeadlineMs - Date.now()) / 1000);
-            timerEl.textContent = formatTime(remainingSeconds);
-            if (remainingSeconds <= 0) {
-                clearTimeout(timerHandle);
-                timerHandle = null;
-                forceSubmit();
-                return;
-            }
-            timerHandle = setTimeout(tickExamTimer, Math.min(1000, Math.max(100, examDeadlineMs - Date.now())));
-        }
-
-        tickExamTimer();
     }
 
     // ------------------------------------------------------------------
@@ -242,7 +241,6 @@
         hasEnteredFullscreenOnce = true;
         examStarted = true;
         hideGate();
-        startExamTimer();
         startQuestionTimer(slides[currentIndex]);
     }
 
@@ -404,10 +402,6 @@
             lockedOverlay.classList.add("modal-open");
             document.body.classList.add("modal-open");
         }
-        if (timerHandle) {
-            clearTimeout(timerHandle);
-            timerHandle = null;
-        }
         stopQuestionTimer();
         exitFullscreenIfNeeded();
         hideGate();
@@ -425,10 +419,6 @@
         form.addEventListener("submit", function () {
             if (submitted) return; // already handled by forceSubmit
             submitted = true;
-            if (timerHandle) {
-                clearTimeout(timerHandle);
-                timerHandle = null;
-            }
             stopQuestionTimer();
             exitFullscreenIfNeeded();
             hideGate();

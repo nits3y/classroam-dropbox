@@ -2,7 +2,7 @@
 {% block title %}{{ exam.title }} — Classroom Dropbox{% endblock %}
 
 {% block content %}
-<div class="card student-card" id="examCard" data-exam-code="{{ exam.code }}" data-time-limit="{{ exam.time_limit_seconds }}">
+<div class="card {% if attempt %}exam-active-card{% else %}student-card{% endif %}" id="examCard" data-exam-code="{{ exam.code }}">
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}
@@ -230,24 +230,36 @@
             <h1 style="margin-bottom: 0;">{{ exam.title }}</h1>
         </div>
             <div style="text-align: right;" data-max-warnings="{{ exam.max_security_warnings }}">
-            <div id="examTimer" class="badge ongoing" style="font-size: 1rem; padding: 0.4rem 0.8rem;">--:--</div>
             <p class="subtle" style="margin-top: 0.35rem;">
                 Warnings: <span id="warningCount">{{ attempt.security_warnings }}</span>/{{ exam.max_security_warnings }}
             </p>
         </div>
     </div>
 
-    <p class="subtle" id="questionProgress" style="text-align:center; margin-bottom: 0.25rem;">
-        Question 1 of {{ questions|length }}
-    </p>
-    <p class="subtle" id="questionTimerRow" style="text-align:center; margin-bottom: 0.5rem; display:none;">
-        Time for this question: <span id="questionTimer">--</span>
-    </p>
+    <div class="exam-progress-row">
+        <p class="subtle" id="questionProgress">Question 1 of {{ questions|length }}</p>
+        <div id="questionTimerRow" class="question-timer" style="display:none;" role="timer" aria-live="polite">
+            <span class="question-timer-caption">Time left</span>
+            <strong id="questionTimer">--:--</strong>
+        </div>
+    </div>
 
     <form method="post" class="stacked-form" id="examAnswerForm">
         <div id="questionSlides">
         {% for question in questions %}
-        <div class="form-section question-slide" data-index="{{ loop.index0 }}" data-time-limit="{{ question.time_limit_seconds or '' }}" {% if not loop.first %}style="display:none;"{% endif %}> <div class="section-heading">
+        <div class="form-section question-slide" data-index="{{ loop.index0 }}" data-time-limit="{{ question.time_limit_seconds or '' }}" {% if not loop.first %}style="display:none;"{% endif %}>
+            {% if question.type == 'word-bank' %}
+                {% set bank_words = (question.options and (question.options | from_json)) or [] %}
+                <div class="word-bank-box">
+                    <div class="word-bank-label">Word bank</div>
+                    <div class="word-bank-pool">
+                    {% for word in bank_words %}
+                    <span class="badge">{{ word }}</span>
+                    {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+            <div class="section-heading">
                 <label>{{ loop.index }}. {{ question.question }}
                     <span class="subtle">({{ question.points }} pt{{ 's' if question.points != 1 }})</span>
                 </label>
@@ -261,19 +273,11 @@
                 </label>
                 {% endfor %}
             {% elif question.type == 'true-false' %}
-                <label style="display:flex; align-items:center; gap:0.5rem; font-weight: 400; margin-bottom: 0.4rem;">
-                    <input type="radio" name="question_{{ question.id }}" value="true"> True
-                </label>
-                <label style="display:flex; align-items:center; gap:0.5rem; font-weight: 400;">
-                    <input type="radio" name="question_{{ question.id }}" value="false"> False
-                </label>
-            {% elif question.type == 'word-bank' %}
-                {% set bank_words = (question.options and (question.options | from_json)) or [] %}
-                <div class="word-bank-pool" style="display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem;">
-                    {% for word in bank_words %}
-                    <span class="badge" style="cursor:default;">{{ word }}</span>
-                    {% endfor %}
+                <div class="tf-button-group" role="radiogroup" aria-label="True or false">
+                    <label class="tf-btn"><input type="radio" name="question_{{ question.id }}" value="true"> <span>True</span></label>
+                    <label class="tf-btn"><input type="radio" name="question_{{ question.id }}" value="false"> <span>False</span></label>
                 </div>
+            {% elif question.type == 'word-bank' %}
                 <input type="text" name="question_{{ question.id }}" placeholder="Type your answer using the word bank above">
             {% elif question.type == 'essay' %}
                 <textarea name="question_{{ question.id }}" rows="6" placeholder="Write your answer..." style="font-family: inherit;"></textarea>
@@ -286,7 +290,7 @@
 
         <div class="form-actions" style="margin-top: 1rem; justify-content: flex-end; gap: 0.75rem;">
             <button type="button" class="button" id="nextQuestionBtn">
-                Next
+                <span id="nextQuestionBtnLabel">Next</span>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">
                     <polyline points="9 18 15 12 9 6"/>
                 </svg>

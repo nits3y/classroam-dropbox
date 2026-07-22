@@ -43,6 +43,21 @@ class ExamImportValidationTests(unittest.TestCase):
         self.assertTrue(errors)
         self.assertIn("correctAnswer", errors[0])
 
+    def test_coerce_boolean_correct_answer_to_string(self):
+        parsed = [
+            {
+                "questionType": "True/False",
+                "questionText": "The statement is true.",
+                "correctAnswer": True,
+                "points": 1,
+            }
+        ]
+
+        normalized, errors = normalize_imported_questions(parsed)
+
+        self.assertFalse(errors)
+        self.assertEqual(normalized[0]["correct_answer"], "True")
+
 
 if __name__ == "__main__":
     unittest.main()

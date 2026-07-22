@@ -25,24 +25,38 @@
 </div>
 
 {% if attempts %}
+<div class="panel attempts-toolbar-card">
+    <div class="attempts-toolbar">
+        <div class="toolbar-field search-field">
+            <label for="attemptStudentSearch">Student</label>
+            <input id="attemptStudentSearch" type="search" placeholder="Search by student name" autocomplete="off">
+        </div>
+        <span id="attemptResultCount" class="result-count" aria-live="polite">{{ attempts|length }} of {{ attempts|length }} shown</span>
+    </div>
+</div>
 <div class="table-wrap panel" style="padding:0;">
     <table>
         <thead>
             <tr>
-                <th>Student</th>
-                <th>Status</th>
-                <th>Score</th>
-                <th>Warnings</th>
+                {% for column, label in [('student', 'Student'), ('status', 'Status'), ('score', 'Score'), ('warnings', 'Warnings')] %}
+                <th><button type="button" class="attempt-sort" data-sort-key="{{ column }}" aria-label="Sort by {{ label }}">{{ label }} <span aria-hidden="true"></span></button></th>
+                {% endfor %}
                 <th>IP / Device</th>
-                <th>Started</th>
-                <th>Submitted</th>
+                {% for column, label in [('started', 'Started'), ('submitted', 'Submitted')] %}
+                <th><button type="button" class="attempt-sort" data-sort-key="{{ column }}" aria-label="Sort by {{ label }}">{{ label }} <span aria-hidden="true"></span></button></th>
+                {% endfor %}
                 <th>Auto</th>
                 <th>Actions</th>
             </tr>
         </thead>
         <tbody>
             {% for attempt in attempts %}
-            <tr>
+            <tr data-student="{{ (attempt.last_name ~ ', ' ~ attempt.first_name)|lower|e }}"
+                data-status="{{ attempt.status|lower|e }}"
+                data-score="{{ attempt.score if attempt.score is not none else '' }}"
+                data-warnings="{{ attempt.security_warnings }}"
+                data-started="{{ attempt.started_at|e }}"
+                data-submitted="{{ (attempt.submitted_at or '')|e }}">
                 <td><strong>{{ attempt.last_name }}, {{ attempt.first_name }}</strong></td>
                 <td>
                     <span class="badge {% if attempt.status == 'graded' %}ongoing{% elif attempt.status == 'submitted' %}due-soon{% else %}upcoming{% endif %}">
@@ -126,7 +140,63 @@
 </div>
 
 <script>
-var attemptsData = {{ attempts | map(attribute='id') | list | tojson }};
+var attemptsTable = document.querySelector('.table-wrap table');
+var attemptRows = attemptsTable ? Array.from(attemptsTable.querySelectorAll('tbody tr')) : [];
+var searchInput = document.getElementById('attemptStudentSearch');
+var resultCount = document.getElementById('attemptResultCount');
+var sortKey = null;
+var sortDirection = 1;
+
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function sortValue(row, key) {
+    var value = row.dataset[key] || '';
+    if (['score', 'warnings'].indexOf(key) !== -1) {
+        return value === '' ? null : Number(value);
+    }
+    return value === '' ? null : value.toLowerCase();
+}
+
+function applyAttemptFilters() {
+    var search = (searchInput.value || '').trim().toLowerCase();
+    var shown = 0;
+    attemptRows.forEach(function(row) {
+        var visible = !search || row.dataset.student.indexOf(search) !== -1;
+        row.hidden = !visible;
+        if (visible) shown += 1;
+    });
+    resultCount.textContent = shown + ' of ' + attemptRows.length + ' shown';
+}
+
+function sortAttempts(key) {
+    sortDirection = sortKey === key ? sortDirection * -1 : 1;
+    sortKey = key;
+    var tbody = attemptsTable.querySelector('tbody');
+    attemptRows.sort(function(first, second) {
+        var a = sortValue(first, key);
+        var b = sortValue(second, key);
+        if (a === b) return 0;
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return (a < b ? -1 : 1) * sortDirection;
+    });
+    attemptRows.forEach(function(row) { tbody.appendChild(row); });
+    document.querySelectorAll('.attempt-sort').forEach(function(button) {
+        button.classList.toggle('active', button.dataset.sortKey === key);
+        button.querySelector('span').textContent = button.dataset.sortKey === key ? (sortDirection === 1 ? '▲' : '▼') : '';
+    });
+}
+
+document.querySelectorAll('.attempt-sort').forEach(function(button) {
+    button.addEventListener('click', function() { sortAttempts(button.dataset.sortKey); });
+});
 
 function viewAttemptAnswers(attemptId) {
     var modal = document.getElementById('answersModal');
@@ -134,13 +204,28 @@ function viewAttemptAnswers(attemptId) {
     body.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">Loading...</div>';
     modal.classList.add('modal-open');
 
-    fetch('{{ url_for("admin_exams.view_attempts", exam_id=0) }}'.replace('0', {{ exam.id }}), {
+    fetch('{{ url_for("admin_exams.view_attempt_answers", attempt_id=0) }}'.replace('0', attemptId), {
         headers: { 'Accept': 'application/json' }
     })
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-        // We'll use an API endpoint instead
-        location.href = '{{ url_for("admin_exams.view_attempts", exam_id=0) }}'.replace('0', {{ exam.id }});
+    .then(function(response) {
+        if (!response.ok) throw new Error('Request failed');
+        return response.json();
+    })
+    .then(function(data) {
+        var questionHtml = data.questions.map(function(item, index) {
+            var answer = Array.isArray(item.answer) ? item.answer.join(', ') : item.answer;
+            var expected = Array.isArray(item.correct_answer) ? item.correct_answer.join(', ') : item.correct_answer;
+            var isEssay = item.result === 'manual';
+            var resultClass = isEssay ? 'manual' : (item.result === 'correct' ? 'correct' : 'incorrect');
+            var label = isEssay ? 'Requires manual grading' : (item.result === 'correct' ? '✅ Correct' : '❌ Incorrect');
+            var answerText = answer && String(answer).trim() ? answer : 'No answer';
+            return '<article class="answer-breakdown ' + resultClass + '">' +
+                '<h3>Question ' + (index + 1) + ': ' + escapeHtml(item.question) + '</h3>' +
+                '<p><strong>Response:</strong> ' + escapeHtml(answerText) + '</p>' +
+                (isEssay ? '<p class="subtle">' + escapeHtml(label) + '</p>' : '<p><strong>Correct answer:</strong> ' + escapeHtml(expected || 'No answer') + '</p><p class="answer-result">' + escapeHtml(label) + ' · ' + Math.round(item.earned_points) + ' / ' + Math.round(item.points) + ' points</p>') +
+                '</article>';
+        }).join('');
+        body.innerHTML = '<p><strong>' + escapeHtml(data.student) + '</strong> · Score: ' + Math.round(data.score || 0) + ' / ' + Math.round(data.total_points || 0) + '</p>' + questionHtml;
     })
     .catch(function(err) {
         body.innerHTML = '<div style="text-align:center; padding:2rem; color:#dc2626;">Failed to load answers.</div>';

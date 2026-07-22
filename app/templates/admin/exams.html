@@ -162,7 +162,7 @@
                     <div class="json-import-header">
                         <div>
                             <label>Import questions (JSON)</label>
-                            <span class="subtle">Paste only the question schema here: questionType, questionText, answerOptions or wordBank, correctAnswer, points, and optional per-question time limits.</span>
+                                <span class="subtle">Supported question types: Multiple Choice, True/False, Short Answer, Identification, Essay, and Word Bank.</span>
                         </div>
                         <button type="button" class="secondary json-template-btn" onclick="copyCreateExamJsonTemplate()">
                             📋 Copy JSON Template
@@ -171,7 +171,59 @@
                     <textarea
                         name="questions_json"
                         id="questionsJsonInput"
-                        placeholder="Paste your question schema here..."
+                                                placeholder='{
+    "questions": [
+        {
+            "questionType": "Multiple Choice",
+            "questionText": "What does CPU stand for?",
+            "answerOptions": ["Central Processing Unit", "Computer Personal Unit", "Central Power Unit", "Control Processing Unit"],
+            "correctAnswer": "Central Processing Unit",
+            "explanation": "CPU stands for Central Processing Unit.",
+            "points": 1,
+            "timeLimitSeconds": 30
+        },
+        {
+            "questionType": "True/False",
+            "questionText": "The sun rises in the west.",
+            "correctAnswer": "False",
+            "explanation": "The sun rises in the east, not the west.",
+            "points": 1,
+            "timeLimitSeconds": 20
+        },
+        {
+            "questionType": "Short Answer",
+            "questionText": "What is the chemical symbol for water?",
+            "correctAnswer": "H2O",
+            "explanation": "Water is composed of two hydrogen atoms and one oxygen atom.",
+            "points": 1,
+            "timeLimitSeconds": 30
+        },
+        {
+            "questionType": "Identification",
+            "questionText": "This device converts mechanical energy into electrical energy.",
+            "correctAnswer": "Generator",
+            "explanation": "A generator converts mechanical energy into electrical energy.",
+            "points": 1,
+            "timeLimitSeconds": 30
+        },
+        {
+            "questionType": "Essay",
+            "questionText": "Explain the importance of the water cycle to life on Earth.",
+            "explanation": "Manually graded - no correctAnswer needed for Essay questions.",
+            "points": 5,
+            "timeLimitSeconds": 300
+        },
+        {
+            "questionType": "Word Bank",
+            "questionText": "What is the capital city of France?",
+            "wordBank": ["Paris", "London", "Madrid", "Berlin"],
+            "correctAnswer": ["Paris"],
+            "explanation": "Paris is the capital of France.",
+            "points": 2,
+            "timeLimitSeconds": 45
+        }
+    ]
+}'
                         rows="16"
                         disabled
                         style="font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size:0.82rem;"
@@ -201,19 +253,42 @@
                             "timeLimitSeconds": 30
                         },
                         {
+                            "questionType": "True/False",
+                            "questionText": "The sun rises in the west.",
+                            "correctAnswer": "False",
+                            "explanation": "The sun rises in the east, not the west.",
+                            "points": 1,
+                            "timeLimitSeconds": 20
+                        },
+                        {
+                            "questionType": "Short Answer",
+                            "questionText": "What is the chemical symbol for water?",
+                            "correctAnswer": "H2O",
+                            "explanation": "Water is composed of two hydrogen atoms and one oxygen atom.",
+                            "points": 1,
+                            "timeLimitSeconds": 30
+                        },
+                        {
+                            "questionType": "Identification",
+                            "questionText": "This device converts mechanical energy into electrical energy.",
+                            "correctAnswer": "Generator",
+                            "explanation": "A generator converts mechanical energy into electrical energy.",
+                            "points": 1,
+                            "timeLimitSeconds": 30
+                        },
+                        {
+                            "questionType": "Essay",
+                            "questionText": "Explain the importance of the water cycle to life on Earth.",
+                            "explanation": "Manually graded - no correctAnswer needed for Essay questions.",
+                            "points": 5,
+                            "timeLimitSeconds": 300
+                        },
+                        {
                             "questionType": "Word Bank",
-                            "questionText": "The capital of France is ***1*** and its main language is ***2***.",
-                            "wordBank": [
-                                "Paris",
-                                "French",
-                                "London",
-                                "Spanish"
-                            ],
-                            "correctAnswer": [
-                                "Paris",
-                                "French"
-                            ],
-                            "explanation": "Paris is the capital of France and French is the official language.",
+                            "questionText": "What is the capital city of France?",
+                            "wordBank": ["Paris", "London", "Madrid", "Berlin"],
+                            "correctAnswer": ["Paris"],
+                            "explanation": "Paris is the capital of France.",
                             "points": 2,
                             "timeLimitSeconds": 45
                         }
@@ -363,7 +438,7 @@
                                 continue;
                             }
                             if (validTypes.indexOf(item.questionType) === -1) {
-                                errors.push('Item ' + (i + 1) + ': supported question types are Multiple Choice and Word Bank');
+                                errors.push('Item ' + (i + 1) + ': questionType must be one of ' + validTypes.join(', '));
                                 continue;
                             }
                             if (item.questionType === 'Multiple Choice') {

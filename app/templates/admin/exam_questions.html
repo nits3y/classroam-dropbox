@@ -153,29 +153,59 @@
                     <input type="hidden" name="input_mode" value="json">
                     <div class="form-field">
                         <label>Paste JSON</label>
-                        <textarea name="json_input" placeholder='[
-    {
-        "questionType": "Multiple Choice",
-        "questionText": "What is the primary function of RAM?",
-        "answerOptions": [
-            "Permanent data storage",
-            "Temporary high-speed storage",
-            "Processing graphic commands",
-            "Managing network connections"
-        ],
-        "correctAnswer": "Temporary high-speed storage",
-        "explanation": "RAM holds data temporarily for quick access by the CPU.",
-        "points": 1
-    },
-    {
-        "questionType": "Word Bank",
-        "questionText": "The capital of France is ___1___ and its primary language is ___2___.",
-        "wordBank": ["Paris", "French", "London", "Spanish"],
-        "correctAnswer": ["Paris", "French"],
-        "explanation": "Paris is the capital and French is the official language.",
-        "points": 2
-    }
-]' rows="15" style="font-family: 'SF Mono', 'Fira Code', monospace; font-size:0.82rem;"></textarea>
+                                                <textarea name="json_input" placeholder='{
+    "questions": [
+        {
+            "questionType": "Multiple Choice",
+            "questionText": "What does CPU stand for?",
+            "answerOptions": ["Central Processing Unit", "Computer Personal Unit", "Central Power Unit", "Control Processing Unit"],
+            "correctAnswer": "Central Processing Unit",
+            "explanation": "CPU stands for Central Processing Unit.",
+            "points": 1,
+            "timeLimitSeconds": 30
+        },
+        {
+            "questionType": "True/False",
+            "questionText": "The sun rises in the west.",
+            "correctAnswer": "False",
+            "explanation": "The sun rises in the east, not the west.",
+            "points": 1,
+            "timeLimitSeconds": 20
+        },
+        {
+            "questionType": "Short Answer",
+            "questionText": "What is the chemical symbol for water?",
+            "correctAnswer": "H2O",
+            "explanation": "Water is composed of two hydrogen atoms and one oxygen atom.",
+            "points": 1,
+            "timeLimitSeconds": 30
+        },
+        {
+            "questionType": "Identification",
+            "questionText": "This device converts mechanical energy into electrical energy.",
+            "correctAnswer": "Generator",
+            "explanation": "A generator converts mechanical energy into electrical energy.",
+            "points": 1,
+            "timeLimitSeconds": 30
+        },
+        {
+            "questionType": "Essay",
+            "questionText": "Explain the importance of the water cycle to life on Earth.",
+            "explanation": "Manually graded - no correctAnswer needed for Essay questions.",
+            "points": 5,
+            "timeLimitSeconds": 300
+        },
+        {
+            "questionType": "Word Bank",
+            "questionText": "What is the capital city of France?",
+            "wordBank": ["Paris", "London", "Madrid", "Berlin"],
+            "correctAnswer": ["Paris"],
+            "explanation": "Paris is the capital of France.",
+            "points": 2,
+            "timeLimitSeconds": 45
+        }
+    ]
+}' rows="15" style="font-family: 'SF Mono', 'Fira Code', monospace; font-size:0.82rem;"></textarea>
                         <span class="subtle" style="font-size:0.75rem; margin-top:0.25rem; display:block;">
                             Paste a single question object or an array of question objects. Supported types: Multiple Choice, True/False, Short Answer, Identification, Essay, Word Bank.
                         </span>
@@ -241,7 +271,7 @@ function validateJsonPreview() {
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
             if (!item.questionType || validTypes.indexOf(item.questionType) === -1) {
-                errors.push('Item ' + (i + 1) + ': Invalid or missing questionType');
+                errors.push('Item ' + (i + 1) + ': questionType must be one of ' + validTypes.join(', '));
                 continue;
             }
             if (!item.questionText || !item.questionText.trim()) {
