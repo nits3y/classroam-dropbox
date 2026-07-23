@@ -1091,6 +1091,59 @@ def manage_questions(exam_id):
     return render_template("admin/exam_questions.html", exam=exam, questions=questions)
 
 
+@admin_exams_bp.route("/<int:exam_id>/questions/json")
+@teacher_required
+def questions_json(exam_id):
+    exam = ExamStore.get_exam(exam_id)
+    if exam is None:
+        abort(404)
+    questions = ExamStore.get_questions(exam_id)
+    return {
+        "exam_id": exam_id,
+        "questions": [
+            {
+                "id": question["id"],
+                "question": question["question"],
+                "type": question["type"],
+                "points": question["points"],
+                "options": load_options(question["options"]),
+            }
+            for question in questions
+        ],
+    }
+
+
+@admin_exams_bp.route("/<int:exam_id>/edit", methods=["POST"])
+@teacher_required
+def edit_exam(exam_id):
+    exam = ExamStore.get_exam(exam_id)
+    if exam is None:
+        return {"ok": False, "message": "Exam not found."}, 404
+
+    title = request.form.get("title", "").strip()
+    description = request.form.get("description", "").strip()
+    code = request.form.get("code", "").strip()
+    status = request.form.get("status", "").strip()
+    time_limit_minutes = request.form.get("time_limit_minutes", type=int)
+    max_attempts = request.form.get("max_attempts", type=int)
+
+    if not title:
+        return {"ok": False, "message": "Title is required."}, 400
+
+    fields = {"title": title, "description": description}
+    if code:
+        fields["code"] = code
+    if status in {"active", "draft", "closed"}:
+        fields["status"] = status
+    if time_limit_minutes is not None:
+        fields["time_limit_seconds"] = time_limit_minutes * 60
+    if max_attempts is not None:
+        fields["max_attempts"] = max_attempts
+
+    ExamStore.update_exam(exam_id, **fields)
+    return {"ok": True}
+
+
 @admin_exams_bp.route("/questions/<int:question_id>/delete", methods=["POST"])
 @teacher_required
 def delete_question(question_id):
