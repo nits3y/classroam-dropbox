@@ -104,26 +104,55 @@ def grade_single_answer(question, given_answer):
     if not question:
         return False
 
-    if question.get("type") == "essay":
+    def _qget(key, default=None):
+        # Support both dict-like objects and sqlite3.Row
+        try:
+            return question[key]
+        except Exception:
+            try:
+                return question.get(key, default)
+            except Exception:
+                return default
+
+    q_type = _qget("type")
+    if q_type == "essay":
         return False
 
-    if question.get("type") == "word-bank":
+    if q_type == "word-bank":
+        # correct_answer is stored as JSON array (e.g. '["Photosynthesis"]').
+        # Student answers are a single free-text input (e.g. 'Photosynthesis'),
+        # but may also occasionally be a JSON-encoded list. Support both.
         try:
-            given_list = json.loads((given_answer or "[]") if not isinstance(given_answer, list) else json.dumps(given_answer))
-            correct_list = json.loads((question.get("correct_answer") or "[]"))
-            if len(given_list) != len(correct_list):
-                return False
-            return all(
-                str(g).strip().lower() == str(c).strip().lower()
-                for g, c in zip(given_list, correct_list)
-            )
+            correct_list = json.loads((_qget("correct_answer") or "[]"))
         except (json.JSONDecodeError, TypeError, AttributeError):
-            return False
+            correct_list = []
+
+        # Normalize correct variants to lowercase strings
+        correct_variants = [str(c).strip().lower() for c in correct_list if c is not None]
+
+        # If given is already a list, compare element-wise (preserve legacy behavior)
+        if isinstance(given_answer, list):
+            given_list = [str(g).strip().lower() for g in given_answer]
+            return len(given_list) == len(correct_variants) and all(g == c for g, c in zip(given_list, correct_variants))
+
+        # Otherwise try to parse the given answer as JSON; if it yields a list, compare element-wise
+        try:
+            parsed = json.loads(given_answer or "[]")
+            if isinstance(parsed, list):
+                given_list = [str(g).strip().lower() for g in parsed]
+                return len(given_list) == len(correct_variants) and all(g == c for g, c in zip(given_list, correct_variants))
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            # Not JSON — fall through to plain-text comparison
+            pass
+
+        # Plain-text answer: check if it matches any of the acceptable correct variants
+        given_text = str(given_answer or "").strip().lower()
+        return bool(given_text and given_text in correct_variants)
 
     given_text = str(given_answer or "").strip().lower()
     accepted = [
         variant.strip().lower()
-        for variant in str(question.get("correct_answer") or "").split(",")
+        for variant in str(_qget("correct_answer") or "").split(",")
         if variant.strip()
     ]
     return bool(accepted and given_text in accepted)
