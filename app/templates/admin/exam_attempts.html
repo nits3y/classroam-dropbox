@@ -74,7 +74,7 @@
                 <td>{{ 'Yes' if attempt.is_auto_submitted else 'No' }}</td>
                 <td>
                     <div class="row-actions" style="gap:0.35rem;">
-                        <a href="{{ url_for('admin_exams.view_attempt_detail', attempt_id=attempt.id) }}" class="button small secondary">View answers</a>
+                        <button type="button" class="button small secondary" onclick="viewAttemptAnswers({{ attempt.id }})">View answers</button>
                         {% if attempt.status == 'PENDING_APPROVAL' %}
                         <form method="post" action="{{ url_for('admin_exams.approve_attempt', attempt_id=attempt.id) }}" style="display:inline-block;">
                             <button type="submit" class="button small primary">Approve</button>
@@ -128,23 +128,103 @@
 <script>
 var attemptsData = {{ attempts | map(attribute='id') | list | tojson }};
 
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function viewAttemptAnswers(attemptId) {
     var modal = document.getElementById('answersModal');
     var body = document.getElementById('answersModalBody');
     body.innerHTML = '<div style="text-align:center; padding:2rem; color:#94a3b8;">Loading...</div>';
     modal.classList.add('modal-open');
 
-    fetch('{{ url_for("admin_exams.view_attempts", exam_id=0) }}'.replace('0', {{ exam.id }}), {
-        headers: { 'Accept': 'application/json' }
-    })
-    .then(function(r) { return r.text(); })
-    .then(function(html) {
-        // We'll use an API endpoint instead
-        location.href = '{{ url_for("admin_exams.view_attempts", exam_id=0) }}'.replace('0', {{ exam.id }});
-    })
-    .catch(function(err) {
-        body.innerHTML = '<div style="text-align:center; padding:2rem; color:#dc2626;">Failed to load answers.</div>';
-    });
+    var url = '{{ url_for("admin_exams.view_attempt_detail", attempt_id=0) }}'.replace('0', attemptId);
+    fetch(url, { headers: { 'Accept': 'application/json' } })
+        .then(function(res) {
+            if (!res.ok) throw new Error('Network error');
+            return res.json();
+        })
+        .then(function(data) {
+            var html = [];
+            html.push('<div style="padding:0.25rem 0 0.5rem 0;">');
+            html.push('<h2 style="margin:0 0 0.25rem 0; font-size:1.25rem;">' + escapeHtml(data.student) + '</h2>');
+            var scoreText = (data.score === null || data.score === undefined) ? 'Not yet scored' : (Math.round(data.score) + ' / ' + (data.total_points ? Math.round(data.total_points) : '—'));
+            html.push('<p class="subtle" style="margin:0 0 0.5rem 0;">' + escapeHtml(String(scoreText)) + '</p>');
+            html.push('</div>');
+
+            if (data.questions && data.questions.length) {
+                data.questions.forEach(function(q, idx) {
+                    var isEssay = q.is_essay;
+                    var correct = q.is_correct === true;
+                    var borderColor = isEssay ? '#e5e7eb' : (correct ? '#10b981' : '#ef4444');
+                    var bg = isEssay ? '#f8fafc' : (correct ? '#ecfdf5' : '#fff1f2');
+                    html.push('<div style="border-radius:12px; padding:1rem; margin-bottom:0.75rem; background:' + bg + '; border-left:6px solid ' + borderColor + ';">');
+                    html.push('<div style="display:flex; justify-content:space-between; align-items:center; gap:1rem;">');
+                    html.push('<div style="flex:1;">');
+                    html.push('<div class="eyebrow" style="margin:0 0 0.25rem 0; text-transform:uppercase; font-size:0.7rem; letter-spacing:0.06em;">Question ' + (idx+1) + '</div>');
+                    html.push('<div style="font-weight:600; margin-bottom:0.35rem;">' + escapeHtml(q.question) + '</div>');
+                    html.push('<div class="subtle" style="font-size:0.85rem;">' + escapeHtml(String(q.points)) + ' point' + (q.points != 1 ? 's' : '') + '</div>');
+                    html.push('</div>');
+                    html.push('<div style="flex:0 0 auto;">');
+                    if (isEssay) {
+                        html.push('<span class="badge upcoming">Needs manual grading</span>');
+                    } else if (correct) {
+                        html.push('<span class="badge ongoing">Correct</span>');
+                    } else {
+                        html.push('<span class="badge closed">Incorrect</span>');
+                    }
+                    html.push('</div>');
+                    html.push('</div>');
+
+                    // Student answer
+                    html.push('<div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">');
+                    html.push('<div>');
+                    html.push('<div class="eyebrow" style="margin:0 0 0.35rem 0;">Student answer</div>');
+                    var given = (q.given_answer || '').toString().trim();
+                    if (given) {
+                        html.push('<div style="padding:0.75rem; border-radius:8px; background:#ffffff; border:1px solid #e6eef6;">' + escapeHtml(given) + '</div>');
+                    } else {
+                        html.push('<div style="padding:0.75rem; border-radius:8px; background:#ffffff; border:1px solid #e6eef6; color:#94a3b8; font-style:italic;">No answer provided.</div>');
+                    }
+                    html.push('</div>');
+
+                    // Correct answer
+                    html.push('<div>');
+                    html.push('<div class="eyebrow" style="margin:0 0 0.35rem 0;">Correct answer</div>');
+                    if (isEssay) {
+                        html.push('<div style="padding:0.75rem; border-radius:8px; background:#ffffff; border:1px solid #e6eef6; color:#64748b; font-style:italic;">Essay — requires manual grading</div>');
+                    } else {
+                        var corr = q.correct_answer || '';
+                        if (corr) {
+                            html.push('<div class="correct-answer-box" role="status" aria-label="Correct answer">');
+                            html.push('<div class="correct-answer-meta"><span>Answer key</span><span class="correct-answer-check">✓</span></div>');
+                            html.push('<div class="correct-answer-text">' + escapeHtml(corr) + '</div>');
+                            html.push('</div>');
+                        } else {
+                            html.push('<div style="padding:0.75rem; border-radius:8px; background:#ffffff; border:1px solid #e6eef6; color:#94a3b8; font-style:italic;">No correct answer set.</div>');
+                        }
+                    }
+                    html.push('</div>');
+                    html.push('</div>');
+
+                    html.push('</div>');
+                });
+            } else {
+                html.push('<div class="panel" style="text-align:center; padding:2rem;">No questions found for this attempt.</div>');
+            }
+
+            body.innerHTML = html.join('\n');
+        })
+        .catch(function(err) {
+            body.innerHTML = '<div style="text-align:center; padding:2rem; color:#dc2626;">Failed to load answers.</div>';
+            console.error(err);
+        });
 }
 </script>
 {% endblock %}

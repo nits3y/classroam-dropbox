@@ -262,6 +262,40 @@ button:disabled {
     overflow: auto;
     max-height: 60vh;
 }
+
+/* Correct answer highlight used in admin "Student answers" modal */
+.correct-answer-box {
+    padding: 0.75rem;
+    border-radius: 8px;
+    background: #dcfce7; /* light green tint */
+    border-left: 4px solid #16a34a; /* strong green accent */
+    box-shadow: inset 0 0 0 1px rgba(22,163,74,0.03);
+    color: #065f46; /* dark green text for contrast */
+    font-weight: 600;
+}
+.correct-answer-box .correct-answer-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #065f46;
+}
+.correct-answer-box .correct-answer-check {
+    background: #16a34a;
+    color: #ffffff;
+    border-radius: 999px;
+    padding: 0 6px;
+    font-weight: 700;
+    font-size: 0.78rem;
+    line-height: 1.6;
+}
+.correct-answer-text {
+    font-weight: 600;
+    color: #064e3b;
+}
 .modal-body-inner {
     display: grid;
     grid-template-columns: 1fr 360px;

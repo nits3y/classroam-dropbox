@@ -364,7 +364,7 @@ class ExamStore:
 
     @staticmethod
     def create_exam(class_id, title, description="", instructions="",
-                     time_limit_seconds=1800, time_limit_enabled=True,
+                     time_limit_seconds=5400, time_limit_enabled=True,
                      max_attempts=1, status="draft"):
         db = get_db()
         code = generate_exam_code()
@@ -1119,6 +1119,40 @@ def view_attempt_detail(attempt_id):
             "is_essay": is_essay,
             "is_correct": False if is_essay else grade_single_answer(question, given_answer),
         })
+
+    # If the client prefers JSON, return a machine-readable representation
+    if request.headers.get("Accept") == "application/json":
+        def _format_correct_answer(q):
+            try:
+                if (q.get("type") if hasattr(q, 'get') else q["type"]) == "word-bank":
+                    # correct_answer stored as JSON array string
+                    try:
+                        arr = json.loads(q.get("correct_answer") if hasattr(q, 'get') else q["correct_answer"] or "[]")
+                        return " / ".join(str(x) for x in arr)
+                    except Exception:
+                        return q.get("correct_answer") if hasattr(q, 'get') else q["correct_answer"]
+                return q.get("correct_answer") if hasattr(q, 'get') else q["correct_answer"]
+            except Exception:
+                return None
+
+        return {
+            "student": f"{attempt['first_name']} {attempt['last_name']}",
+            "status": attempt["status"],
+            "score": attempt.get("score") if isinstance(attempt, dict) else attempt["score"],
+            "total_points": attempt.get("total_points") if isinstance(attempt, dict) else attempt["total_points"],
+            "questions": [
+                {
+                    "question": item["question"]["question"],
+                    "points": item["question"]["points"],
+                    "type": item["question"]["type"],
+                    "given_answer": item["given_answer"],
+                    "correct_answer": _format_correct_answer(item["question"]),
+                    "is_essay": item["is_essay"],
+                    "is_correct": item["is_correct"],
+                }
+                for item in question_results
+            ],
+        }
 
     return render_template(
         "admin/exam_attempt_detail.html",
