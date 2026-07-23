@@ -527,6 +527,23 @@ class ExamStore:
         return bool(row)
 
     @staticmethod
+    def get_resumable_attempt_by_name(exam_id, last_name, first_name):
+        row = get_db().execute(
+            """
+            SELECT * FROM exam_attempts
+            WHERE exam_id = ?
+              AND lower(last_name) = lower(?)
+              AND lower(first_name) = lower(?)
+              AND excluded_from_attempt_count = 0
+              AND status IN ('PENDING_APPROVAL', 'APPROVED', 'IN_PROGRESS', 'in-progress')
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (exam_id, last_name, first_name),
+        ).fetchone()
+        return row
+
+    @staticmethod
     def has_attempt_for_fingerprint(exam_id, ip_address=None, device_id=None):
         if not ip_address and not device_id:
             return False
@@ -787,6 +804,14 @@ def take_exam(code):
                 return attach_exam_device_cookie(response, device_id)
 
             if ExamStore.has_attempt_by_name(exam["id"], last_name, first_name):
+                resumable = ExamStore.get_resumable_attempt_by_name(exam["id"], last_name, first_name)
+                if resumable is not None:
+                    session[f"exam_attempt_{exam['id']}"] = resumable["id"]
+                    response = make_response(
+                        render_template("exams/take_exam.html", exam=exam, questions=[], attempt=resumable)
+                    )
+                    return attach_exam_device_cookie(response, device_id)
+
                 flash(
                     "A registration with this name already exists for this exam. Check your spelling and try again.",
                     "error",
@@ -795,6 +820,14 @@ def take_exam(code):
                 return attach_exam_device_cookie(response, device_id)
 
             if ExamStore.has_attempt_for_fingerprint(exam["id"], ip_address, device_id):
+                resumable = ExamStore.get_resumable_attempt_by_name(exam["id"], last_name, first_name)
+                if resumable is not None:
+                    session[f"exam_attempt_{exam['id']}"] = resumable["id"]
+                    response = make_response(
+                        render_template("exams/take_exam.html", exam=exam, questions=[], attempt=resumable)
+                    )
+                    return attach_exam_device_cookie(response, device_id)
+
                 flash(
                     "A registration from this device or IP already exists for this exam. Ask your teacher for assistance.",
                     "error",
