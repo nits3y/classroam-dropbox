@@ -220,7 +220,14 @@ def normalize_imported_questions(parsed):
                 continue
         else:
             options_list = None
-            correct_answer = (item.get("correctAnswer") or "").strip()
+            raw_correct = item.get("correctAnswer")
+            if isinstance(raw_correct, list):
+                # Multiple acceptable answers, e.g. ["Paris", "City of Paris"]
+                correct_answer = ", ".join(
+                    str(variant).strip() for variant in raw_correct if str(variant).strip()
+                )
+            else:
+                correct_answer = (raw_correct or "").strip()
 
         time_limit_seconds = item.get("timeLimitSeconds")
         if time_limit_seconds is not None:
@@ -603,8 +610,12 @@ class ExamStore:
                     pass
             else:
                 given = (answers.get(str(question["id"])) or "").strip().lower()
-                correct = (question["correct_answer"] or "").strip().lower()
-                if correct and given == correct:
+                accepted = [
+                    variant.strip().lower()
+                    for variant in (question["correct_answer"] or "").split(",")
+                    if variant.strip()
+                ]
+                if accepted and given in accepted:
                     score += question["points"]
 
         db = get_db()

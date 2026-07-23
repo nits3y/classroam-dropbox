@@ -292,6 +292,7 @@ function toggleOptionsField() {
         optionsField.style.display = 'none';
         wordBankField.style.display = 'block';
         correctAnswerInput.placeholder = 'Comma-separated correct answers (e.g. Paris, French)';
+        correctAnswerHint.textContent = 'For Word Bank, enter answers as a comma-separated list in blank order (e.g. Paris, French)';
         correctAnswerHint.style.display = 'block';
     } else if (type === 'multiple-choice') {
         optionsField.style.display = 'block';
@@ -306,8 +307,9 @@ function toggleOptionsField() {
     } else {
         optionsField.style.display = 'none';
         wordBankField.style.display = 'none';
-        correctAnswerInput.placeholder = 'The correct answer';
-        correctAnswerHint.style.display = 'none';
+        correctAnswerInput.placeholder = 'The correct answer (comma-separate to accept more than one, e.g. Paris, City of Paris)';
+        correctAnswerHint.textContent = 'Accepts any one of a comma-separated list, matched case-insensitively (e.g. Paris, City of Paris, paris)';
+        correctAnswerHint.style.display = type === 'essay' ? 'none' : 'block';
     }
 }
 document.addEventListener('DOMContentLoaded', toggleOptionsField);
