@@ -100,6 +100,35 @@ def load_answers(answers_text):
         return {}
 
 
+def grade_single_answer(question, given_answer):
+    if not question:
+        return False
+
+    if question.get("type") == "essay":
+        return False
+
+    if question.get("type") == "word-bank":
+        try:
+            given_list = json.loads((given_answer or "[]") if not isinstance(given_answer, list) else json.dumps(given_answer))
+            correct_list = json.loads((question.get("correct_answer") or "[]"))
+            if len(given_list) != len(correct_list):
+                return False
+            return all(
+                str(g).strip().lower() == str(c).strip().lower()
+                for g, c in zip(given_list, correct_list)
+            )
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return False
+
+    given_text = str(given_answer or "").strip().lower()
+    accepted = [
+        variant.strip().lower()
+        for variant in str(question.get("correct_answer") or "").split(",")
+        if variant.strip()
+    ]
+    return bool(accepted and given_text in accepted)
+
+
 def dump_options(options_list):
     return json.dumps(options_list) if options_list else None
 
@@ -227,7 +256,7 @@ def normalize_imported_questions(parsed):
                     str(variant).strip() for variant in raw_correct if str(variant).strip()
                 )
             else:
-                correct_answer = (raw_correct or "").strip()
+                correct_answer = (str(raw_correct).strip() if raw_correct is not None else "")
 
         time_limit_seconds = item.get("timeLimitSeconds")
         if time_limit_seconds is not None:
@@ -598,25 +627,8 @@ class ExamStore:
             if question["type"] == "essay":
                 needs_manual_grading = True
                 continue
-            if question["type"] == "word-bank":
-                try:
-                    given_list = json.loads((answers.get(str(question["id"])) or "[]"))
-                    correct_list = json.loads((question["correct_answer"] or "[]"))
-                    if len(given_list) == len(correct_list) and all(
-                        g.strip().lower() == c.strip().lower() for g, c in zip(given_list, correct_list)
-                    ):
-                        score += question["points"]
-                except (json.JSONDecodeError, TypeError, AttributeError):
-                    pass
-            else:
-                given = (answers.get(str(question["id"])) or "").strip().lower()
-                accepted = [
-                    variant.strip().lower()
-                    for variant in (question["correct_answer"] or "").split(",")
-                    if variant.strip()
-                ]
-                if accepted and given in accepted:
-                    score += question["points"]
+            if grade_single_answer(question, answers.get(str(question["id"]))):
+                score += question["points"]
 
         db = get_db()
         now = now_local().isoformat(timespec="seconds")
@@ -1052,6 +1064,39 @@ def view_attempts(exam_id):
     if request.headers.get("Accept") == "application/json":
         return {"exam_id": exam_id, "attempts": [serialize_attempt(attempt) for attempt in attempts]}
     return render_template("admin/exam_attempts.html", exam=exam, attempts=attempts)
+
+
+@admin_exams_bp.route("/attempts/<int:attempt_id>")
+@teacher_required
+def view_attempt_detail(attempt_id):
+    attempt = ExamStore.get_attempt(attempt_id)
+    if attempt is None:
+        abort(404)
+
+    exam = ExamStore.get_exam(attempt["exam_id"])
+    if exam is None:
+        abort(404)
+
+    questions = ExamStore.get_questions(exam["id"])
+    answers = load_answers(attempt["answers"])
+
+    question_results = []
+    for question in questions:
+        given_answer = answers.get(str(question["id"]), "")
+        is_essay = question["type"] == "essay"
+        question_results.append({
+            "question": question,
+            "given_answer": given_answer,
+            "is_essay": is_essay,
+            "is_correct": False if is_essay else grade_single_answer(question, given_answer),
+        })
+
+    return render_template(
+        "admin/exam_attempt_detail.html",
+        exam=exam,
+        attempt=attempt,
+        questions=question_results,
+    )
 
 
 @admin_exams_bp.route("/<int:exam_id>/attempts/live")

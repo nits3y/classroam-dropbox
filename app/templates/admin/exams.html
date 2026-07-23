@@ -187,35 +187,52 @@
                 var createExamJsonTemplate = {
                     "questions": [
                         {
-                            "questionType": "Multiple Choice",
-                            "questionText": "What does CPU stand for?",
-                            "answerOptions": [
-                                "Central Processing Unit",
-                                "Computer Personal Unit",
-                                "Central Power Unit",
-                                "Control Processing Unit"
-                            ],
-                            "correctAnswer": "Central Processing Unit",
-                            "explanation": "CPU stands for Central Processing Unit.",
-                            "points": 1,
-                            "timeLimitSeconds": 30
+                        "questionType": "Multiple Choice",
+                        "questionText": "Which planet is known as the Red Planet?",
+                        "answerOptions": ["Venus", "Mars", "Jupiter", "Saturn"],
+                        "correctAnswer": "Mars",
+                        "explanation": "Mars appears red due to iron oxide (rust) on its surface.",
+                        "points": 1,
+                        "timeLimitSeconds": 30
                         },
                         {
-                            "questionType": "Word Bank",
-                            "questionText": "The capital of France is ***1*** and its main language is ***2***.",
-                            "wordBank": [
-                                "Paris",
-                                "French",
-                                "London",
-                                "Spanish"
-                            ],
-                            "correctAnswer": [
-                                "Paris",
-                                "French"
-                            ],
-                            "explanation": "Paris is the capital of France and French is the official language.",
-                            "points": 2,
-                            "timeLimitSeconds": 45
+                        "questionType": "True/False",
+                        "questionText": "The Great Wall of China is visible from space with the naked eye.",
+                        "correctAnswer": "false",
+                        "explanation": "This is a common myth — it's not actually visible without aid.",
+                        "points": 1,
+                        "timeLimitSeconds": 20
+                        },
+                        {
+                        "questionType": "Short Answer",
+                        "questionText": "How many continents are there on Earth?",
+                        "correctAnswer": "7, seven",
+                        "explanation": "Multiple accepted forms can be comma-separated.",
+                        "points": 2,
+                        "timeLimitSeconds": 30
+                        },
+                        {
+                        "questionType": "Identification",
+                        "questionText": "What do you call a group of lions?",
+                        "correctAnswer": "Pride, A pride",
+                        "explanation": "A group of lions is called a pride.",
+                        "points": 2,
+                        "timeLimitSeconds": 30
+                        },
+                        {
+                        "questionType": "Essay",
+                        "questionText": "Describe one way climate change affects ocean ecosystems.",
+                        "explanation": "Graded manually by the teacher — no correctAnswer needed.",
+                        "points": 5
+                        },
+                        {
+                        "questionType": "Word Bank",
+                        "questionText": "The largest ocean on Earth is the ____ Ocean.",
+                        "wordBank": ["Pacific", "Arctic",  "Indian", "Antarctic", "Artic"],
+                        "correctAnswer": ["Pacific"],
+                        "explanation": "The Pacific is the largest and the Arctic is the smallest ocean.",
+                        "points": 3,
+                        "timeLimitSeconds": 45
                         }
                     ]
                 };

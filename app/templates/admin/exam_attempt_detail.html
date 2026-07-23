@@ -1,0 +1,127 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Attempt details — {{ exam.title }} — Classroom Dropbox{% endblock %}
+{% block page_title %}Attempt details: {{ exam.title }}{% endblock %}
+
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow" style="margin:0 0 0.25rem 0;">Student attempt</p>
+        <h1 style="margin:0;">{{ attempt.first_name }} {{ attempt.last_name }}</h1>
+    </div>
+    <div style="display:flex; gap:0.75rem; align-items:center; flex-wrap:wrap;">
+        <a href="{{ url_for('admin_exams.view_attempts', exam_id=exam.id) }}" class="button secondary small">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Back to attempts
+        </a>
+    </div>
+</div>
+
+<div class="panel" style="margin-bottom:1.25rem;">
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; justify-content:space-between; align-items:center;">
+        <div>
+            <p class="subtle" style="margin:0 0 0.35rem 0;">Attempt status</p>
+            <span class="badge {% if attempt.status == 'graded' %}ongoing{% elif attempt.status == 'submitted' %}due-soon{% else %}upcoming{% endif %}">
+                {{ attempt.status }}
+            </span>
+        </div>
+        <div>
+            <p class="subtle" style="margin:0 0 0.35rem 0;">Score</p>
+            <strong>{{ attempt.score|round|int if attempt.score is not none else '—' }}{% if attempt.total_points %} / {{ attempt.total_points|round|int }}{% endif %}</strong>
+        </div>
+        <div>
+            <p class="subtle" style="margin:0 0 0.35rem 0;">Total points</p>
+            <strong>{{ attempt.total_points|round|int if attempt.total_points is not none else '—' }}</strong>
+        </div>
+        <div>
+            <p class="subtle" style="margin:0 0 0.35rem 0;">Started</p>
+            <strong>{{ attempt.started_at or '—' }}</strong>
+        </div>
+        <div>
+            <p class="subtle" style="margin:0 0 0.35rem 0;">Submitted</p>
+            <strong>{{ attempt.submitted_at or '—' }}</strong>
+        </div>
+    </div>
+</div>
+
+{% if questions %}
+<div class="stacked-form" style="gap:1rem;">
+    {% for item in questions %}
+    <div class="panel">
+        <div class="panel-header" style="margin-bottom:0.75rem; align-items:flex-start;">
+            <div>
+                <p class="eyebrow" style="margin:0 0 0.3rem 0;">Question {{ loop.index }}</p>
+                <h2 style="margin:0 0 0.2rem 0;">{{ item.question.question }}</h2>
+                <p class="subtle" style="margin:0;">{{ item.question.points }} point{% if item.question.points != 1 %}s{% endif %}</p>
+            </div>
+            {% if item.is_essay %}
+            <span class="badge upcoming">Needs manual grading</span>
+            {% elif item.is_correct %}
+            <span class="badge ongoing">Correct</span>
+            {% else %}
+            <span class="badge closed">Incorrect</span>
+            {% endif %}
+        </div>
+
+        <div class="two-column" style="gap:1rem;">
+            <div>
+                <p class="eyebrow" style="margin:0 0 0.35rem 0;">Student answer</p>
+                <div class="panel" style="padding:1rem; background:#f8fafc; border-color:#e2e8f0;">
+                    {% if item.question.type == 'word-bank' %}
+                        {% set values = item.given_answer | from_json %}
+                        {% if values %}
+                            {{ values | join(', ') }}
+                        {% else %}
+                            <span class="subtle">No answer provided.</span>
+                        {% endif %}
+                    {% elif item.question.type == 'multiple-choice' %}
+                        {% if item.given_answer %}
+                            {{ item.given_answer }}
+                        {% else %}
+                            <span class="subtle">No answer provided.</span>
+                        {% endif %}
+                    {% else %}
+                        {% if item.given_answer %}
+                            {{ item.given_answer }}
+                        {% else %}
+                            <span class="subtle">No answer provided.</span>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <p class="eyebrow" style="margin:0 0 0.35rem 0;">Correct answer</p>
+                <div class="panel" style="padding:1rem; background:#f8fafc; border-color:#e2e8f0;">
+                    {% if item.question.type == 'word-bank' %}
+                        {% set values = item.question.correct_answer | from_json %}
+                        {% if values %}
+                            {{ values | join(', ') }}
+                        {% else %}
+                            <span class="subtle">No correct answer set.</span>
+                        {% endif %}
+                    {% elif item.question.type == 'multiple-choice' %}
+                        {% if item.question.correct_answer %}
+                            {{ item.question.correct_answer }}
+                        {% else %}
+                            <span class="subtle">No correct answer set.</span>
+                        {% endif %}
+                    {% else %}
+                        {% if item.question.correct_answer %}
+                            {{ item.question.correct_answer }}
+                        {% else %}
+                            <span class="subtle">No correct answer set.</span>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="panel" style="text-align:center; padding:3rem 2rem;">
+    <p class="subtle" style="margin-bottom:0.5rem;">No questions were found for this exam.</p>
+</div>
+{% endif %}
+{% endblock %}

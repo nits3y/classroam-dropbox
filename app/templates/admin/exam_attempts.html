@@ -74,7 +74,7 @@
                 <td>{{ 'Yes' if attempt.is_auto_submitted else 'No' }}</td>
                 <td>
                     <div class="row-actions" style="gap:0.35rem;">
-                        <button class="button small secondary" onclick="viewAttemptAnswers({{ attempt.id }})">View answers</button>
+                        <a href="{{ url_for('admin_exams.view_attempt_detail', attempt_id=attempt.id) }}" class="button small secondary">View answers</a>
                         {% if attempt.status == 'PENDING_APPROVAL' %}
                         <form method="post" action="{{ url_for('admin_exams.approve_attempt', attempt_id=attempt.id) }}" style="display:inline-block;">
                             <button type="submit" class="button small primary">Approve</button>
