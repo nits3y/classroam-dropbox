@@ -12,6 +12,7 @@ app = create_app()
 if __name__ == "__main__":
     host = "0.0.0.0"
     debug = os.environ.get("CLASSROOM_DEBUG") == "1"
+    # debug = True  
 
     # Allow overriding port via environment for flexibility
     env_port = os.environ.get("CLASSROOM_PORT")

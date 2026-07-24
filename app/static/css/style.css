@@ -756,7 +756,6 @@ button:disabled {
 .copy-code-btn {
     display: none;
 }
-}
 
 .blank-state-card h2 {
     margin-top: 0.35rem;
@@ -1665,6 +1664,20 @@ body.modal-open {
     color: #475569;
 }
 
+/* Overrides: ensure body cells align to top so actions align with title/description */
+.exam-table tbody td {
+    vertical-align: top;
+}
+
+.exam-title-cell {
+    display: flex;
+    flex-direction: column;
+}
+
+.exam-table td.actions-cell {
+    vertical-align: top;
+}
+
 .modal-overlay#adminActionModal .modal-dialog {
     width: min(920px, 100%);
     max-height: calc(100vh - 3rem);
@@ -2384,6 +2397,67 @@ body.modal-open {
 }
 .modal-table tbody tr:hover {
     background: rgba(248,250,252,0.6); /* subtle hover */
+}
+
+/* Redesigned exam list: card-based layout with centered actions */
+.exam-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.85rem;
+}
+.exam-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid #eef2f6;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+}
+.exam-left {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+.exam-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    justify-content: space-between;
+}
+.exam-title-row .row-title-link {
+    font-size: 1.05rem;
+    font-weight: 700;
+    text-align: left;
+}
+.exam-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+.exam-right .actions-cell {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    justify-content: flex-end;
+}
+.exam-right .status-cell { margin-bottom: 0.25rem; }
+
+@media (max-width: 820px) {
+    .exam-card {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .exam-right {
+        flex-direction: row;
+        justify-content: space-between;
+        margin-top: 0.25rem;
+    }
 }
 
 /* Header polishing */
