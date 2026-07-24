@@ -1169,6 +1169,17 @@ def close_exam(exam_id):
     return redirect(url_for("admin_exams.list_exams"))
 
 
+@admin_exams_bp.route("/<int:exam_id>/toggle", methods=["POST"])
+@teacher_required
+def toggle_exam_status(exam_id):
+    exam = ExamStore.get_exam(exam_id)
+    if exam is None:
+        return {"ok": False, "message": "Exam not found."}, 404
+    new_status = "active" if exam["status"] == "closed" else "closed"
+    ExamStore.update_exam(exam_id, status=new_status)
+    return {"ok": True, "status": new_status}
+
+
 @admin_exams_bp.route("/<int:exam_id>/attempts")
 @teacher_required
 def view_attempts(exam_id):

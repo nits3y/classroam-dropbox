@@ -15,58 +15,45 @@
 
 {% if exams %}
 <div class="table-wrap panel" style="padding:0;">
-    <table>
-        <thead>
-            <tr>
-                <th>Title</th>
-                <th>Class</th>
-                <th>Code</th>
-                <th>Time limit</th>
-                <th>Attempts</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for exam in exams %}
-            {% set cls = classes | selectattr('id', 'equalto', exam.class_id) | first %}
-            <tr>
-                <td>
-                    <a href="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="row-title-link">
-                        {{ exam.title }}
-                    </a>
-                </td>
-                <td>{{ cls.name if cls else '—' }}</td>
-                <td><span class="code-pill">{{ exam.code }}</span></td>
-                <td>{{ exam.time_limit_seconds // 60 }} min</td>
-                <td>{{ exam.max_attempts }}</td>
-                <td>
-                    <span class="badge {% if exam.status == 'active' %}ongoing{% elif exam.status == 'closed' %}closed{% else %}upcoming{% endif %}">
-                        {{ exam.status }}
-                    </span>
-                </td>
-                <td>
-                    <div class="row-actions" style="gap:0.35rem;">
-                        <a href="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="button small secondary">Questions</a>
-                        <a href="{{ url_for('admin_exams.view_attempts', exam_id=exam.id) }}" class="button small secondary">Attempts</a>
-                        {% if exam.status == 'draft' %}
-                        <form method="post" action="{{ url_for('admin_exams.activate_exam', exam_id=exam.id) }}" style="display:inline;">
-                            <button type="submit" class="button small">Activate</button>
-                        </form>
-                        {% elif exam.status == 'active' %}
-                        <form method="post" action="{{ url_for('admin_exams.close_exam', exam_id=exam.id) }}" style="display:inline;">
-                            <button type="submit" class="button small secondary">Close</button>
-                        </form>
-                        {% endif %}
-                        <form method="post" action="{{ url_for('admin_exams.delete_exam', exam_id=exam.id) }}" style="display:inline;" onsubmit="return confirm('Delete this exam and all its data?');">
-                            <button type="submit" class="button small danger-link">Delete</button>
-                        </form>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="exam-list table" style="width:100%;">
+        <table style="width:100%; border-collapse:collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding:0.75rem 1rem;">Title</th>
+                    <th style="text-align:left; padding:0.75rem 1rem;">Code</th>
+                    <th style="text-align:left; padding:0.75rem 1rem;">Attempts</th>
+                    <th style="text-align:left; padding:0.75rem 1rem;">Status</th>
+                    <th style="text-align:right; padding:0.75rem 1rem;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exam in exams %}
+                <tr data-exam='{{ {"id": exam.id, "title": exam.title, "description": exam.description or "", "code": exam.code, "max_attempts": exam.max_attempts, "status": exam.status} | tojson | safe }}' data-exam-id="{{ exam.id }}">
+                    <td style="padding:0.85rem 1rem;">
+                        <a href="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="row-title-link">
+                            {{ exam.title }}
+                        </a>
+                    </td>
+                    <td style="padding:0.85rem 1rem;"><span class="code-pill">{{ exam.code }}</span></td>
+                    <td style="padding:0.85rem 1rem;">{{ exam.max_attempts }}</td>
+                    <td style="padding:0.85rem 1rem;">
+                        <button type="button" class="badge status-badge {% if exam.status == 'active' %}ongoing{% elif exam.status == 'closed' %}closed{% else %}upcoming{% endif %}" data-action="toggle-status" data-exam-id="{{ exam.id }}">{{ exam.status }}</button>
+                    </td>
+                    <td style="padding:0.85rem 1rem; text-align:right;">
+                        <div class="row-actions" style="gap:0.35rem; display:inline-flex; align-items:center;">
+                            <a href="{{ url_for('admin_exams.manage_questions', exam_id=exam.id) }}" class="button small secondary">Questions</a>
+                            <a href="{{ url_for('admin_exams.view_attempts', exam_id=exam.id) }}" class="button small secondary">Attempts</a>
+                            <button type="button" class="button small" data-action="edit" data-exam-id="{{ exam.id }}">Edit</button>
+                            <form method="post" action="{{ url_for('admin_exams.delete_exam', exam_id=exam.id) }}" style="display:inline;" onsubmit="return confirm('Delete this exam and all its data?');">
+                                <button type="submit" class="button small danger-link">Delete</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% else %}
 <div class="panel" style="text-align:center; padding:3rem 2rem;">
@@ -74,6 +61,91 @@
     <p class="subtle" style="font-size:0.82rem;">Create your first exam to get started.</p>
 </div>
 {% endif %}
+
+<!-- Edit Exam Modal (AJAX update) -->
+<div class="modal-overlay edit-modal-overlay" id="editExamModal" aria-hidden="true">
+    <div class="edit-modal" role="dialog" aria-modal="true" aria-labelledby="editExamHeading">
+        <header class="edit-modal__header">
+            <div>
+                <p class="eyebrow">Edit Exam</p>
+                <h2 id="editExamHeading" class="edit-modal__title">Edit Exam</h2>
+            </div>
+            <button class="edit-modal__close" id="editModalClose" aria-label="Close">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </header>
+
+        <div class="edit-modal__progress" aria-hidden="true">
+            <div class="steps">
+                <div class="step active"><span class="step-dot"></span><span class="step-label">Exam Details</span></div>
+                <div class="step"><span class="step-dot"></span><span class="step-label">Settings</span></div>
+                <div class="step"><span class="step-dot"></span><span class="step-label">Confirm</span></div>
+            </div>
+            <div class="progress-bar"><div class="progress-bar__fill" style="width:33%"></div></div>
+        </div>
+
+        <form id="editExamForm" class="edit-modal__form">
+            <input type="hidden" name="exam_id" id="editExamId">
+
+            <section class="section">
+                <div class="section__heading">Details</div>
+                <div class="form-grid-1">
+                    <label class="form-field">
+                        <div class="field-label">Exam Title</div>
+                        <input id="editTitle" name="title" type="text" class="input" required>
+                    </label>
+                    <label class="form-field full">
+                        <div class="field-label">Description</div>
+                        <textarea id="editDescription" name="description" rows="4" class="input input--textarea"></textarea>
+                    </label>
+                    <label class="form-field">
+                        <div class="field-label">Access Code</div>
+                        <input id="editCode" name="code" type="text" class="input input--code">
+                    </label>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="section__heading">Settings</div>
+                <div class="form-grid-2">
+                    <label class="form-field field-stepper">
+                        <div class="field-label">Max Attempts</div>
+                        <div class="number-stepper" data-target="#editAttempts">
+                            <button type="button" class="stepper-btn stepper-decrement" aria-label="Decrease">−</button>
+                            <input id="editAttempts" name="max_attempts" type="number" min="1" value="1" class="input input--number">
+                            <button type="button" class="stepper-btn stepper-increment" aria-label="Increase">+</button>
+                        </div>
+                    </label>
+
+                    <label class="form-field">
+                        <div class="field-label">Status</div>
+                        <div class="custom-select" data-target="#editStatus">
+                            <button type="button" class="custom-select__trigger">
+                                <span class="custom-select__value">Closed</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+                            </button>
+                            <ul class="custom-select__options" aria-hidden="true">
+                                <li data-value="active">Active</li>
+                                <li data-value="draft">Draft</li>
+                                <li data-value="closed" class="selected">Closed</li>
+                            </ul>
+                            <select id="editStatus" name="status" class="visually-hidden">
+                                <option value="active">Active</option>
+                                <option value="draft">Draft</option>
+                                <option value="closed" selected>Closed</option>
+                            </select>
+                        </div>
+                    </label>
+                </div>
+            </section>
+
+            <div class="edit-modal__actions">
+                <button type="button" class="button button--outline" id="discardEditBtn">Discard Changes</button>
+                <button type="submit" class="button button--primary" id="saveEditBtn">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Create Exam Modal -->
 <div class="modal-overlay" id="createExamModal">
@@ -406,6 +478,173 @@
                     return true;
                 }
                 </script>
+
+<script>
+// Toggle status via AJAX
+document.addEventListener('DOMContentLoaded', function() {
+    function findRowById(id) {
+        return document.querySelector('[data-exam-id="' + id + '"]');
+    }
+
+    document.querySelectorAll('[data-action="toggle-status"]').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var examId = this.dataset.examId;
+            if (!examId) return;
+            var url = '/admin/exams/' + examId + '/toggle';
+            fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function(res) { return res.json(); })
+                .then(function(payload) {
+                    if (!payload || !payload.ok) return;
+                    var newStatus = payload.status;
+                    var row = findRowById(examId);
+                    if (!row) return;
+                    // update data-exam
+                    try {
+                        var data = JSON.parse(row.getAttribute('data-exam') || '{}');
+                        data.status = newStatus;
+                        row.setAttribute('data-exam', JSON.stringify(data));
+                    } catch (e) {}
+                    // update badge text and classes
+                    btn.textContent = newStatus;
+                    btn.classList.remove('ongoing','closed','upcoming');
+                    if (newStatus === 'active') btn.classList.add('ongoing');
+                    else if (newStatus === 'closed') btn.classList.add('closed');
+                    else btn.classList.add('upcoming');
+                }).catch(function(){});
+        });
+    });
+
+    // Edit modal handlers
+    var editModal = document.getElementById('editExamModal');
+    var editForm = document.getElementById('editExamForm');
+    var cancelEditBtn = document.getElementById('cancelEditBtn');
+    var editClose = document.getElementById('editModalClose');
+
+    function openEditModal(examData) {
+        document.getElementById('editExamId').value = examData.id;
+        document.getElementById('editTitle').value = examData.title || '';
+        document.getElementById('editDescription').value = examData.description || '';
+        document.getElementById('editCode').value = examData.code || '';
+        document.getElementById('editAttempts').value = examData.max_attempts || 1;
+        document.getElementById('editStatus').value = examData.status || 'draft';
+
+        var statusSelect = document.getElementById('editStatus');
+        var customSelect = document.querySelector('.custom-select[data-target="#editStatus"]');
+        if (customSelect) {
+            customSelect.querySelectorAll('li').forEach(function(li) {
+                li.classList.toggle('selected', li.dataset.value === statusSelect.value);
+            });
+            var triggerValue = customSelect.querySelector('.custom-select__value');
+            if (triggerValue) triggerValue.textContent = statusSelect.options[statusSelect.selectedIndex].text;
+        }
+
+        editModal.classList.add('modal-open');
+        document.body.classList.add('modal-open');
+    }
+
+    function closeEditModal() {
+        editModal.style.display = 'none';
+        editModal.classList.remove('modal-open');
+        document.body.classList.remove('modal-open');
+    }
+
+    cancelEditBtn && cancelEditBtn.addEventListener('click', closeEditModal);
+    editClose && editClose.addEventListener('click', closeEditModal);
+
+    // Open edit modal when Edit button clicked
+    document.querySelectorAll('button[data-action="edit"]').forEach(function(b) {
+        b.addEventListener('click', function() {
+            var examId = this.dataset.examId;
+            var row = document.querySelector('[data-exam-id="' + examId + '"]');
+            if (!row) return;
+            try {
+                var data = JSON.parse(row.getAttribute('data-exam'));
+            } catch (e) { var data = null; }
+            if (!data) return;
+            openEditModal(data);
+        });
+    });
+
+    // Submit edit form via AJAX and update row in-place
+    editForm && editForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var examId = document.getElementById('editExamId').value;
+        var formData = new FormData(editForm);
+        fetch('/admin/exams/' + examId + '/edit', { method: 'POST', body: formData, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(function(res) { return res.json(); })
+            .then(function(payload) {
+                if (!payload || !payload.ok) {
+                    alert(payload.message || 'Unable to save changes.');
+                    return;
+                }
+                var row = document.querySelector('[data-exam-id="' + examId + '"]');
+                if (!row) {
+                    closeEditModal();
+                    return;
+                }
+                // update DOM fields
+                var data = JSON.parse(row.getAttribute('data-exam') || '{}');
+                data.title = formData.get('title');
+                data.description = formData.get('description');
+                data.code = formData.get('code');
+                data.max_attempts = parseInt(formData.get('max_attempts')) || data.max_attempts;
+                data.status = formData.get('status') || data.status;
+                row.setAttribute('data-exam', JSON.stringify(data));
+                // title
+                var titleLink = row.querySelector('.row-title-link');
+                if (titleLink) titleLink.textContent = data.title;
+                // code
+                var codePill = row.querySelector('.code-pill');
+                if (codePill) codePill.textContent = data.code;
+                // attempts
+                var attemptsCell = row.children[2];
+                if (attemptsCell) attemptsCell.textContent = data.max_attempts;
+                // status badge
+                var statusBtn = row.querySelector('[data-action="toggle-status"]');
+                if (statusBtn) {
+                    statusBtn.textContent = data.status;
+                    statusBtn.classList.remove('ongoing','closed','upcoming');
+                    if (data.status === 'active') statusBtn.classList.add('ongoing');
+                    else if (data.status === 'closed') statusBtn.classList.add('closed');
+                    else statusBtn.classList.add('upcoming');
+                }
+                closeEditModal();
+            }).catch(function(){ alert('Unable to save changes.'); });
+    });
+
+    // wire up custom select
+    document.querySelectorAll('.custom-select').forEach(function(cs) {
+        var trigger = cs.querySelector('.custom-select__trigger');
+        var options = cs.querySelector('.custom-select__options');
+        var select = cs.querySelector('select');
+        trigger && trigger.addEventListener('click', function() {
+            options.style.display = options.style.display === 'block' ? 'none' : 'block';
+        });
+        options && options.querySelectorAll('li').forEach(function(li) {
+            li.addEventListener('click', function() {
+                options.querySelectorAll('li').forEach(function(x){ x.classList.remove('selected'); });
+                li.classList.add('selected');
+                var v = li.dataset.value;
+                select.value = v;
+                var valueText = trigger.querySelector('.custom-select__value');
+                if (valueText) valueText.textContent = li.textContent;
+                options.style.display = 'none';
+            });
+        });
+        // close when clicking outside
+        document.addEventListener('click', function(ev){ if (!cs.contains(ev.target)) options.style.display = 'none'; });
+    });
+
+    // number stepper
+    document.querySelectorAll('.number-stepper').forEach(function(ns) {
+        var input = ns.querySelector('input');
+        var inc = ns.querySelector('.stepper-increment');
+        var dec = ns.querySelector('.stepper-decrement');
+        inc && inc.addEventListener('click', function(){ input.value = Math.max(parseInt(input.value||0)+1, parseInt(input.min||1)); });
+        dec && dec.addEventListener('click', function(){ input.value = Math.max(parseInt(input.value||0)-1, parseInt(input.min||1)); });
+    });
+});
+</script>
                 <div class="modal-footer-flat">
                     <button type="button" class="secondary" onclick="document.getElementById('createExamModal').classList.remove('modal-open')">Cancel</button>
                     <button type="submit" class="primary" id="createExamSubmitBtn">Create Exam</button>
